@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/JonasCappe/book-management-api/internal/data"
 	"github.com/lib/pq"
@@ -58,7 +60,8 @@ func (s *BookStore) Create(ctx context.Context, book *data.Book) error {
 		return err
 	}
 
-	if err := recordBookHistory(ctx, tx, book.ID, data.ChangeTypeCreated, "book created", map[string]any{"after": book}); err != nil {
+	description := fmt.Sprintf("Book %q was created", book.Title)
+	if err := recordBookHistory(ctx, tx, book.ID, data.ChangeTypeCreated, description, map[string]any{"after": book}); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -114,7 +117,7 @@ func (s *BookStore) Update(ctx context.Context, book *data.Book) error {
 		return err
 	}
 
-	if err := recordBookHistory(ctx, tx, book.ID, data.ChangeTypeUpdated, "book updated", map[string]any{
+	if err := recordBookHistory(ctx, tx, book.ID, data.ChangeTypeUpdated, describeBookChanges(previousBook, book), map[string]any{
 		"before": previousBook,
 		"after":  book,
 	}); err != nil {
@@ -218,7 +221,8 @@ func (s *BookStore) Delete(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	if err := recordBookHistory(ctx, tx, id, data.ChangeTypeDeleted, "book deleted", map[string]any{"before": book}); err != nil {
+	description := fmt.Sprintf("Book %q was deleted", book.Title)
+	if err := recordBookHistory(ctx, tx, id, data.ChangeTypeDeleted, description, map[string]any{"before": book}); err != nil {
 		return err
 	}
 
@@ -334,4 +338,43 @@ func recordBookHistory(
 		Description: description,
 		Changes:     changes,
 	})
+}
+
+func describeBookChanges(before, after *data.Book) string {
+	descriptions := make([]string, 0)
+	if before.Title != after.Title {
+		descriptions = append(descriptions, fmt.Sprintf("Title changed from %q to %q", before.Title, after.Title))
+	}
+	if before.Description != after.Description {
+		descriptions = append(descriptions, fmt.Sprintf("Description changed from %q to %q", before.Description, after.Description))
+	}
+	if !before.PublicationDate.Equal(after.PublicationDate.Time) {
+		descriptions = append(descriptions, fmt.Sprintf(
+			"Publication date changed from %s to %s",
+			before.PublicationDate.Format("2006-01-02"),
+			after.PublicationDate.Format("2006-01-02"),
+		))
+	}
+
+	beforeAuthors := make(map[int64]data.Author, len(before.Authors))
+	afterAuthors := make(map[int64]data.Author, len(after.Authors))
+	for _, author := range before.Authors {
+		beforeAuthors[author.ID] = author
+	}
+	for _, author := range after.Authors {
+		afterAuthors[author.ID] = author
+		if _, existed := beforeAuthors[author.ID]; !existed {
+			descriptions = append(descriptions, fmt.Sprintf("Author %q was added", author.Name))
+		}
+	}
+	for _, author := range before.Authors {
+		if _, remains := afterAuthors[author.ID]; !remains {
+			descriptions = append(descriptions, fmt.Sprintf("Author %q was removed", author.Name))
+		}
+	}
+
+	if len(descriptions) == 0 {
+		return "Book was updated without visible field changes"
+	}
+	return strings.Join(descriptions, "; ")
 }

@@ -47,6 +47,7 @@ func (app *application) mount() http.Handler { // *chi.Mux
 			r.Get("/", app.getBooksHandler)
 			r.Route("/{bookID}", func(r chi.Router) {
 				r.Get("/", app.getBookHandler)
+				r.Get("/history", app.getBookHistoryHandler)
 				r.Delete("/", app.deleteBookHandler)
 				r.Patch("/", app.patchBookHandler)
 			})
