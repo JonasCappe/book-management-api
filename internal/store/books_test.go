@@ -1,10 +1,12 @@
 package store
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/JonasCappe/book-management-api/internal/data"
+	"github.com/lib/pq"
 )
 
 func TestDescribeBookChanges(t *testing.T) {
@@ -34,5 +36,17 @@ func TestDescribeBookChanges(t *testing.T) {
 		if !strings.Contains(description, expected) {
 			t.Errorf("description %q does not contain %q", description, expected)
 		}
+	}
+}
+
+func TestNormalizeBookWriteError(t *testing.T) {
+	databaseError := &pq.Error{Code: "23505", Constraint: "books_title_key"}
+	if err := normalizeBookWriteError(databaseError); !errors.Is(err, ErrDuplicateTitle) {
+		t.Fatalf("normalizeBookWriteError() = %v, want ErrDuplicateTitle", err)
+	}
+
+	otherError := errors.New("database unavailable")
+	if err := normalizeBookWriteError(otherError); !errors.Is(err, otherError) {
+		t.Fatalf("normalizeBookWriteError() = %v, want original error", err)
 	}
 }
