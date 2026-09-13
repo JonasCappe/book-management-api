@@ -5,16 +5,26 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/JonasCappe/book-management-api/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
 type application struct {
 	config config
+	store  store.Storage
+}
+
+type dbConfig struct {
+	dsn          string
+	maxOpenConns int
+	maxIdleConns int
+	maxIdleTime  time.Duration
 }
 
 type config struct {
 	addr string
+	db   dbConfig
 }
 
 func (app *application) mount() http.Handler { // *chi.Mux
@@ -46,7 +56,7 @@ func (app *application) run(mux http.Handler) error {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	log.Printf("server started om port: %s", app.config.addr)
+	log.Printf("server started on address: %s", app.config.addr)
 
 	return srv.ListenAndServe()
 }
