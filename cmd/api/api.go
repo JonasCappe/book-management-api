@@ -25,13 +25,14 @@ type dbConfig struct {
 type config struct {
 	addr string
 	db   dbConfig
+	env  string
 }
 
 func (app *application) mount() http.Handler { // *chi.Mux
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(middleware.RealIP) // TODO: REPLACE
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
@@ -39,8 +40,17 @@ func (app *application) mount() http.Handler { // *chi.Mux
 
 	// TODO Setup Endpoints
 	r.Route("/v1", func(r chi.Router) {
-		// General
 		r.Get("/health", app.healthCheckHandler)
+
+		r.Route("/books", func(r chi.Router) {
+			r.Post("/", app.createBookHandler)
+			r.Get("/", app.getBooksHandler)
+			r.Route("/{bookID}", func(r chi.Router) {
+				r.Get("/", app.getBookHandler)
+				r.Delete("/", app.deleteBookHandler)
+				r.Patch("/", app.patchBookHandler)
+			})
+		})
 	})
 
 	return r

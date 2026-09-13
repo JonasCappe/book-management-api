@@ -3,15 +3,23 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/JonasCappe/book-management-api/internal/data"
+)
+
+var (
+	ErrNotFound       = errors.New("resource not found")
+	ErrAuthorNotFound = errors.New("author not found")
 )
 
 type Storage struct {
 	Books interface {
 		Create(context.Context, *data.Book) error
 		Update(context.Context, *data.Book) error
-		GetByID(context.Context, int64) (data.Book, error)
+		GetByID(context.Context, int64) (*data.Book, error)
+		GetAll(context.Context) ([]data.Book, error)
+		Delete(context.Context, int64) error
 	}
 	HistoryEntries interface {
 		Create(context.Context, *data.HistoryEntry) error

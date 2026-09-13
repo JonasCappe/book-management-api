@@ -8,6 +8,8 @@ import (
 	"github.com/JonasCappe/book-management-api/internal/store"
 )
 
+const version = "0.0.1"
+
 func main() {
 	cfg := config{
 		addr: env.GetString("ADDR", ":3000"),
@@ -17,10 +19,10 @@ func main() {
 			maxIdleConns: env.GetInt("DB_MAX_IDLE_CONNS", 50),
 			maxIdleTime:  env.GetTimeDuration("DB_MAX_IDLE_TIME"),
 		},
+		env: env.GetString("ENVIRONMENT", "development"),
 	}
 
-
-	db, err := db.New(
+	database, err := db.New(
 		cfg.db.dsn,
 		cfg.db.maxOpenConns,
 		cfg.db.maxIdleConns,
@@ -28,17 +30,17 @@ func main() {
 	)
 
 	if err != nil {
-		log.Panic(err)
+		log.Fatal(err)
 	}
 
-	defer db.Close()
-	log.Println("database connection pool sucessfully established")
+	defer database.Close()
+	log.Println("database connection pool successfully established")
 
-	store := store.NewStorage(db)
+	storage := store.NewStorage(database)
 
 	app := &application{
 		config: cfg,
-		store:  store,
+		store:  storage,
 	}
 
 	mux := app.mount()
