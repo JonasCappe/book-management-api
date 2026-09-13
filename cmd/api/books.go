@@ -13,17 +13,31 @@ import (
 type CreateBookPayload struct {
 	Title           string    `json:"title" validate:"required,notblank,max=150"`
 	Description     string    `json:"description" validate:"max=1024"`
-	PublicationDate data.Date `json:"publication_date" validate:"required"`
+	PublicationDate data.Date `json:"publication_date" validate:"required" swaggertype:"string" example:"1937-09-21"`
 	AuthorIDs       []int64   `json:"author_ids" validate:"required,min=1,unique,dive,gt=0"`
 }
 
 type UpdateBookPayload struct {
 	Title           *string    `json:"title" validate:"omitempty,notblank,max=150"`
 	Description     *string    `json:"description" validate:"omitempty,max=1024"`
-	PublicationDate *data.Date `json:"publication_date" validate:"omitempty"`
+	PublicationDate *data.Date `json:"publication_date" validate:"omitempty" swaggertype:"string" example:"1937-09-21"`
 	AuthorIDs       *[]int64   `json:"author_ids" validate:"omitempty,min=1,unique,dive,gt=0"`
 }
 
+// createBookHandler godoc
+//
+//	@Summary		Create a book
+//	@Description	Creates a book with a publication date and one or more existing authors.
+//	@Tags			books
+//	@Accept			json
+//	@Produce		json
+//	@Param			book	body		CreateBookPayload	true	"Book to create"
+//	@Success		201		{object}	BookResponse
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		409		{object}	ErrorResponse
+//	@Failure		422		{object}	ErrorResponse
+//	@Failure		500		{object}	ErrorResponse
+//	@Router			/v1/books [post]
 func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request) {
 	var payload CreateBookPayload
 
@@ -72,6 +86,18 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// getBookHandler godoc
+//
+//	@Summary		Retrieve a book
+//	@Description	Returns an active book and its authors.
+//	@Tags			books
+//	@Produce		json
+//	@Param			bookID	path		int	true	"Book ID"
+//	@Success		200		{object}	BookResponse
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		404		{object}	ErrorResponse
+//	@Failure		500		{object}	ErrorResponse
+//	@Router			/v1/books/{bookID} [get]
 func (app *application) getBookHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := app.readBookID(r)
 	if err != nil {
@@ -96,6 +122,17 @@ func (app *application) getBookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// deleteBookHandler godoc
+//
+//	@Summary		Delete a book
+//	@Description	Soft-deletes a book while preserving its change history.
+//	@Tags			books
+//	@Param			bookID	path	int	true	"Book ID"
+//	@Success		204
+//	@Failure		400	{object}	ErrorResponse
+//	@Failure		404	{object}	ErrorResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Router			/v1/books/{bookID} [delete]
 func (app *application) deleteBookHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := app.readBookID(r)
 	if err != nil {
@@ -115,6 +152,22 @@ func (app *application) deleteBookHandler(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// patchBookHandler godoc
+//
+//	@Summary		Update a book
+//	@Description	Partially updates a book and records a human-readable history entry.
+//	@Tags			books
+//	@Accept			json
+//	@Produce		json
+//	@Param			bookID	path		int					true	"Book ID"
+//	@Param			book	body		UpdateBookPayload	true	"Fields to update"
+//	@Success		200		{object}	BookResponse
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		404		{object}	ErrorResponse
+//	@Failure		409		{object}	ErrorResponse
+//	@Failure		422		{object}	ErrorResponse
+//	@Failure		500		{object}	ErrorResponse
+//	@Router			/v1/books/{bookID} [patch]
 func (app *application) patchBookHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := app.readBookID(r)
 	if err != nil {
@@ -181,6 +234,15 @@ func (app *application) patchBookHandler(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+// getBooksHandler godoc
+//
+//	@Summary		List books
+//	@Description	Returns all active books and their authors.
+//	@Tags			books
+//	@Produce		json
+//	@Success		200	{object}	BooksResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Router			/v1/books [get]
 func (app *application) getBooksHandler(w http.ResponseWriter, r *http.Request) {
 	books, err := app.store.Books.GetAll(r.Context())
 	if err != nil {

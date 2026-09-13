@@ -19,6 +19,5 @@ type HistoryEntry struct {
 	ChangedAt   time.Time       `json:"changed_at"`
 	ChangeType  ChangeType      `json:"change_type"`
 	Description string          `json:"description"`
-	Changes     json.RawMessage `json:"changes"`
+	Changes     json.RawMessage `json:"changes" swaggertype:"object"`
 }
-
