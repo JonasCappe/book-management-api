@@ -21,3 +21,22 @@ type HistoryEntry struct {
 	Description string          `json:"description"`
 	Changes     json.RawMessage `json:"changes"`
 }
+
+type HistoryQuery struct {
+	Page       int
+	PageSize   int
+	ChangeType ChangeType
+	Order      string
+}
+
+type Pagination struct {
+	Page       int `json:"page"`
+	PageSize   int `json:"page_size"`
+	TotalItems int `json:"total_items"`
+	TotalPages int `json:"total_pages"`
+}
+
+type HistoryPage struct {
+	Entries    []HistoryEntry `json:"entries"`
+	Pagination Pagination     `json:"pagination"`
+}
