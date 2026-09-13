@@ -9,8 +9,10 @@ import (
 )
 
 var (
-	ErrNotFound       = errors.New("resource not found")
-	ErrAuthorNotFound = errors.New("author not found")
+	ErrNotFound                = errors.New("resource not found")
+	ErrAuthorNotFound          = errors.New("author not found")
+	ErrAuthorsRequired         = errors.New("at least one author is required")
+	ErrPublicationDateRequired = errors.New("publication date is required")
 )
 
 type Storage struct {
