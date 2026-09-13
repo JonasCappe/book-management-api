@@ -169,16 +169,65 @@ func getBookByID(ctx context.Context, db bookQueryer, id int64, forUpdate bool) 
 	return book, nil
 }
 
-func (s *BookStore) GetAll(ctx context.Context) ([]data.Book, error) {
-	query := `
+func (s *BookStore) GetAll(ctx context.Context, filters data.BookQuery) (data.BookPage, error) {
+	sortColumns := map[string]string{
+		"id":               "id",
+		"title":            "title",
+		"publication_date": "publication_date",
+		"created_at":       "created_at",
+		"updated_at":       "updated_at",
+	}
+	orderBy, valid := sortColumns[filters.OrderBy]
+	if !valid {
+		return data.BookPage{}, fmt.Errorf("unsupported book sort field %q", filters.OrderBy)
+	}
+	order := strings.ToUpper(filters.Order)
+	if order != "ASC" && order != "DESC" {
+		return data.BookPage{}, fmt.Errorf("unsupported book sort order %q", filters.Order)
+	}
+
+	conditions := []string{"deleted_at IS NULL"}
+	args := make([]any, 0, 6)
+	addCondition := func(condition string, value any) {
+		args = append(args, value)
+		conditions = append(conditions, fmt.Sprintf(condition, len(args)))
+	}
+
+	if filters.Title != "" {
+		addCondition("title ILIKE '%%' || $%d || '%%'", filters.Title)
+	}
+	if filters.AuthorID != 0 {
+		addCondition("EXISTS (SELECT 1 FROM book_authors ba WHERE ba.book_id = books.id AND ba.author_id = $%d)", filters.AuthorID)
+	}
+	if filters.PublishedFrom != nil {
+		addCondition("publication_date >= $%d", *filters.PublishedFrom)
+	}
+	if filters.PublishedTo != nil {
+		addCondition("publication_date <= $%d", *filters.PublishedTo)
+	}
+
+	whereClause := strings.Join(conditions, " AND ")
+	var totalItems int
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM books WHERE "+whereClause, args...).Scan(&totalItems); err != nil {
+		return data.BookPage{}, err
+	}
+
+	offset := (filters.Page - 1) * filters.PageSize
+	args = append(args, filters.PageSize, offset)
+	secondaryOrder := ""
+	if orderBy != "id" {
+		secondaryOrder = ", id " + order
+	}
+	query := fmt.Sprintf(`
 		SELECT id, title, description, publication_date, created_at, updated_at
 		FROM books
-		WHERE deleted_at IS NULL
-		ORDER BY id;
-	`
-	rows, err := s.db.QueryContext(ctx, query)
+		WHERE %s
+		ORDER BY %s %s%s
+		LIMIT $%d OFFSET $%d;
+	`, whereClause, orderBy, order, secondaryOrder, len(args)-1, len(args))
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return data.BookPage{}, err
 	}
 	defer rows.Close()
 
@@ -193,21 +242,33 @@ func (s *BookStore) GetAll(ctx context.Context) ([]data.Book, error) {
 			&book.CreatedAt,
 			&book.UpdatedAt,
 		); err != nil {
-			return nil, err
+			return data.BookPage{}, err
 		}
 		books = append(books, book)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return data.BookPage{}, err
 	}
 
 	for i := range books {
 		books[i].Authors, err = getAuthorsForBook(ctx, s.db, books[i].ID)
 		if err != nil {
-			return nil, err
+			return data.BookPage{}, err
 		}
 	}
-	return books, nil
+	totalPages := 0
+	if totalItems > 0 {
+		totalPages = (totalItems + filters.PageSize - 1) / filters.PageSize
+	}
+	return data.BookPage{
+		Books: books,
+		Pagination: data.Pagination{
+			Page:       filters.Page,
+			PageSize:   filters.PageSize,
+			TotalItems: totalItems,
+			TotalPages: totalPages,
+		},
+	}, nil
 }
 
 func (s *BookStore) Delete(ctx context.Context, id int64) error {

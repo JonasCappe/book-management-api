@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -8,6 +9,24 @@ import (
 	"github.com/JonasCappe/book-management-api/internal/data"
 	"github.com/lib/pq"
 )
+
+func TestGetAllRejectsUnsafeSorting(t *testing.T) {
+	bookStore := &BookStore{}
+
+	_, err := bookStore.GetAll(context.Background(), data.BookQuery{
+		Page: 1, PageSize: 20, OrderBy: "id; DROP TABLE books", Order: "asc",
+	})
+	if err == nil {
+		t.Fatal("GetAll() error = nil, want unsafe sort field rejected")
+	}
+
+	_, err = bookStore.GetAll(context.Background(), data.BookQuery{
+		Page: 1, PageSize: 20, OrderBy: "id", Order: "asc; DROP TABLE books",
+	})
+	if err == nil {
+		t.Fatal("GetAll() error = nil, want unsafe sort order rejected")
+	}
+}
 
 func TestDescribeBookChanges(t *testing.T) {
 	oldDate, _ := data.ParseDate("1937-09-21")

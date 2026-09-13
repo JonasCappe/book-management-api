@@ -7,26 +7,23 @@ type Pagination struct {
 	TotalPages int `json:"total_pages"`
 }
 
-
 type HistoryQuery struct {
-	Page       int 			`json:"offset" validate:"gte=0"`
-	PageSize   int			`json:"limit" validate:"gte=1,lte=20"`
+	Page       int `json:"offset" validate:"gte=0"`
+	PageSize   int `json:"limit" validate:"gte=1,lte=20"`
 	ChangeType ChangeType
-	Order      string		`json:"sort" validate:"oneof=asc desc"`
+	Order      string `json:"sort" validate:"oneof=asc desc"`
 }
-
 
 type BookQuery struct {
-	Page     int
-	PageSize int
-
-	Title  string
-	Author string
-
-	OrderBy string
-	Order   string
+	Page          int
+	PageSize      int
+	Title         string
+	AuthorID      int64
+	PublishedFrom *Date
+	PublishedTo   *Date
+	OrderBy       string
+	Order         string
 }
-
 
 type HistoryPage struct {
 	Entries    []HistoryEntry `json:"entries"`
@@ -34,6 +31,6 @@ type HistoryPage struct {
 }
 
 type BookPage struct {
-	Entries []Book `json:"entries"`
-	Pagination Pagination     `json:"pagination"`
+	Books      []Book     `json:"books"`
+	Pagination Pagination `json:"pagination"`
 }

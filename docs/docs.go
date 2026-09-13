@@ -59,11 +59,88 @@ const docTemplate = `{
                     "books"
                 ],
                 "summary": "List books",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Items per page",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Partial title match",
+                        "name": "title",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Author ID",
+                        "name": "author_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "date",
+                        "description": "Published on or after",
+                        "name": "published_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "date",
+                        "description": "Published on or before",
+                        "name": "published_to",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "title",
+                            "publication_date",
+                            "created_at",
+                            "updated_at"
+                        ],
+                        "type": "string",
+                        "default": "id",
+                        "description": "Sort field",
+                        "name": "order_by",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "default": "asc",
+                        "description": "Sort order",
+                        "name": "order",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/main.BooksResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/main.ErrorResponse"
                         }
                     },
                     "500": {
@@ -418,6 +495,20 @@ const docTemplate = `{
                 }
             }
         },
+        "data.BookPage": {
+            "type": "object",
+            "properties": {
+                "books": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/data.Book"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/data.Pagination"
+                }
+            }
+        },
         "data.ChangeType": {
             "type": "string",
             "enum": [
@@ -516,10 +607,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/data.Book"
-                    }
+                    "$ref": "#/definitions/data.BookPage"
                 }
             }
         },
