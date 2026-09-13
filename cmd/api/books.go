@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -240,19 +241,94 @@ func (app *application) patchBookHandler(w http.ResponseWriter, r *http.Request)
 //	@Description	Returns all active books and their authors.
 //	@Tags			books
 //	@Produce		json
-//	@Success		200	{object}	BooksResponse
-//	@Failure		500	{object}	ErrorResponse
+//	@Param			page			query		int		false	"Page number"		default(1)	minimum(1)
+//	@Param			page_size		query		int		false	"Items per page"	default(20)	minimum(1)	maximum(100)
+//	@Param			title			query		string	false	"Partial title match"
+//	@Param			author_id		query		int		false	"Author ID"					minimum(1)
+//	@Param			published_from	query		string	false	"Published on or after"		Format(date)
+//	@Param			published_to	query		string	false	"Published on or before"	Format(date)
+//	@Param			order_by		query		string	false	"Sort field"				default(id)		Enums(id, title, publication_date, created_at, updated_at)
+//	@Param			order			query		string	false	"Sort order"				default(asc)	Enums(asc, desc)
+//	@Success		200				{object}	BooksResponse
+//	@Failure		400				{object}	ErrorResponse
+//	@Failure		500				{object}	ErrorResponse
 //	@Router			/v1/books [get]
 func (app *application) getBooksHandler(w http.ResponseWriter, r *http.Request) {
-	books, err := app.store.Books.GetAll(r.Context())
+	filters, err := readBookQuery(r)
+	if err != nil {
+		app.badRequestError(w, r, err)
+		return
+	}
+
+	page, err := app.store.Books.GetAll(r.Context(), filters)
 	if err != nil {
 		app.internalServerError(w, r, err)
 		return
 	}
 
-	if err := app.jsonResponse(w, http.StatusOK, books); err != nil {
+	if err := app.jsonResponse(w, http.StatusOK, page); err != nil {
 		app.internalServerError(w, r, err)
 	}
+}
+
+func readBookQuery(r *http.Request) (data.BookQuery, error) {
+	query := data.BookQuery{Page: 1, PageSize: 20, OrderBy: "id", Order: "asc"}
+	values := r.URL.Query()
+
+	if value := values.Get("page"); value != "" {
+		page, err := strconv.Atoi(value)
+		if err != nil || page < 1 {
+			return query, errors.New("page must be a positive integer")
+		}
+		query.Page = page
+	}
+	if value := values.Get("page_size"); value != "" {
+		pageSize, err := strconv.Atoi(value)
+		if err != nil || pageSize < 1 || pageSize > 100 {
+			return query, errors.New("page_size must be between 1 and 100")
+		}
+		query.PageSize = pageSize
+	}
+	query.Title = values.Get("title")
+	if value := values.Get("author_id"); value != "" {
+		authorID, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || authorID < 1 {
+			return query, errors.New("author_id must be a positive integer")
+		}
+		query.AuthorID = authorID
+	}
+	if value := values.Get("published_from"); value != "" {
+		publishedFrom, err := data.ParseDate(value)
+		if err != nil {
+			return query, fmt.Errorf("published_from %w", err)
+		}
+		query.PublishedFrom = &publishedFrom
+	}
+	if value := values.Get("published_to"); value != "" {
+		publishedTo, err := data.ParseDate(value)
+		if err != nil {
+			return query, fmt.Errorf("published_to %w", err)
+		}
+		query.PublishedTo = &publishedTo
+	}
+	if query.PublishedFrom != nil && query.PublishedTo != nil && query.PublishedFrom.After(query.PublishedTo.Time) {
+		return query, errors.New("published_from must be on or before published_to")
+	}
+	if value := values.Get("order_by"); value != "" {
+		switch value {
+		case "id", "title", "publication_date", "created_at", "updated_at":
+			query.OrderBy = value
+		default:
+			return query, errors.New("order_by must be id, title, publication_date, created_at, or updated_at")
+		}
+	}
+	if value := values.Get("order"); value != "" {
+		if value != "asc" && value != "desc" {
+			return query, errors.New("order must be asc or desc")
+		}
+		query.Order = value
+	}
+	return query, nil
 }
 
 func (app *application) readBookID(r *http.Request) (int64, error) {

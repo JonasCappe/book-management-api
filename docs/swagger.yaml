@@ -29,6 +29,15 @@ definitions:
       updated_at:
         type: string
     type: object
+  data.BookPage:
+    properties:
+      books:
+        items:
+          $ref: '#/definitions/data.Book'
+        type: array
+      pagination:
+        $ref: '#/definitions/data.Pagination'
+    type: object
   data.ChangeType:
     enum:
     - created
@@ -95,9 +104,7 @@ definitions:
   main.BooksResponse:
     properties:
       data:
-        items:
-          $ref: '#/definitions/data.Book'
-        type: array
+        $ref: '#/definitions/data.BookPage'
     type: object
   main.CreateBookPayload:
     properties:
@@ -198,6 +205,58 @@ paths:
   /v1/books:
     get:
       description: Returns all active books and their authors.
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        maximum: 100
+        minimum: 1
+        name: page_size
+        type: integer
+      - description: Partial title match
+        in: query
+        name: title
+        type: string
+      - description: Author ID
+        in: query
+        minimum: 1
+        name: author_id
+        type: integer
+      - description: Published on or after
+        format: date
+        in: query
+        name: published_from
+        type: string
+      - description: Published on or before
+        format: date
+        in: query
+        name: published_to
+        type: string
+      - default: id
+        description: Sort field
+        enum:
+        - id
+        - title
+        - publication_date
+        - created_at
+        - updated_at
+        in: query
+        name: order_by
+        type: string
+      - default: asc
+        description: Sort order
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
       produces:
       - application/json
       responses:
@@ -205,6 +264,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/main.BooksResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:

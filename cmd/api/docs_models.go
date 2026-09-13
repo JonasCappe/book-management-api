@@ -17,7 +17,7 @@ type BookResponse struct {
 }
 
 type BooksResponse struct {
-	Data []data.Book `json:"data"`
+	Data data.BookPage `json:"data"`
 }
 
 type HistoryResponse struct {
