@@ -14,7 +14,9 @@ type Storage struct {
 		GetByID(context.Context, int64) (data.Book, error)
 	}
 	HistoryEntries interface {
-		Create(context.Context) error
+		Create(context.Context, *data.HistoryEntry) error
+		GetByID(context.Context, int64) (data.HistoryEntry, error)
+		GetByBookID(context.Context, int64) ([]data.HistoryEntry, error)
 	}
 }
 
