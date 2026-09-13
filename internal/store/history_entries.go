@@ -13,9 +13,17 @@ type HistoryEntryStore struct {
 	db *sql.DB
 }
 
+type historyEntryCreator interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 var ErrInvalidHistoryChanges = errors.New("history changes must be valid JSON")
 
 func (s *HistoryEntryStore) Create(ctx context.Context, entry *data.HistoryEntry) error {
+	return createHistoryEntry(ctx, s.db, entry)
+}
+
+func createHistoryEntry(ctx context.Context, db historyEntryCreator, entry *data.HistoryEntry) error {
 	if !json.Valid(entry.Changes) {
 		return ErrInvalidHistoryChanges
 	}
@@ -31,7 +39,7 @@ func (s *HistoryEntryStore) Create(ctx context.Context, entry *data.HistoryEntry
 		RETURNING id, changed_at;
 	`
 
-	return s.db.QueryRowContext(
+	return db.QueryRowContext(
 		ctx,
 		query,
 		entry.BookID,
