@@ -5,16 +5,16 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/JonasCappe/book-management-api/docs"
 	"github.com/JonasCappe/book-management-api/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-playground/validator/v10"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
 
 type application struct {
-	config    config
-	store     store.Storage
-	validator *validator.Validate
+	config config
+	store  store.Storage
 }
 
 type dbConfig struct {
@@ -25,9 +25,10 @@ type dbConfig struct {
 }
 
 type config struct {
-	addr string
-	db   dbConfig
-	env  string
+	addr   string
+	apiURL string
+	db     dbConfig
+	env    string
 }
 
 func (app *application) mount() http.Handler { // *chi.Mux
@@ -40,9 +41,12 @@ func (app *application) mount() http.Handler { // *chi.Mux
 
 	r.Use(middleware.Timeout(60 * time.Second))
 
+	r.Get("/health", app.healthCheckHandler)
+
+	r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
+
 	// TODO Setup Endpoints
 	r.Route("/v1", func(r chi.Router) {
-		r.Get("/health", app.healthCheckHandler)
 
 		r.Route("/books", func(r chi.Router) {
 			r.Post("/", app.createBookHandler)
@@ -60,6 +64,10 @@ func (app *application) mount() http.Handler { // *chi.Mux
 }
 
 func (app *application) run(mux http.Handler) error {
+	// Docs
+	docs.SwaggerInfo.Version = version
+	docs.SwaggerInfo.Host = app.config.apiURL
+	docs.SwaggerInfo.BasePath = "/"
 
 	srv := http.Server{
 		Addr:         app.config.addr,

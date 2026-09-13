@@ -6,7 +6,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/go-playground/validator/v10"
 )
+
+var Validate *validator.Validate
+
+func init() {
+	Validate = validator.New(validator.WithRequiredStructEnabled())
+}
 
 func writeJSON(w http.ResponseWriter, status int, data any) error {
 	w.Header().Set("Content-Type", "application/json")
@@ -46,15 +54,24 @@ func readJSON(w http.ResponseWriter, r *http.Request, data any) error {
 	return nil
 }
 
+type APIError struct {
+	Code    string            `json:"code" example:"validation_failed"`
+	Message string            `json:"message" example:"request validation failed"`
+	Fields  map[string]string `json:"fields,omitempty"`
+}
+
+type ErrorResponse struct {
+	Error APIError `json:"error"`
+}
+
 func writeAPIError(w http.ResponseWriter, status int, code, message string, fields map[string]string) error {
-	type apiError struct {
-		Code    string            `json:"code"`
-		Message string            `json:"message"`
-		Fields  map[string]string `json:"fields,omitempty"`
-	}
+	return writeJSON(w, status, &ErrorResponse{Error: APIError{Code: code, Message: message, Fields: fields}})
+}
+
+func (app *application) jsonResponse(w http.ResponseWriter, status int, data any) error {
 	type envelope struct {
-		Error apiError `json:"error"`
+		Data any `json:"data"`
 	}
 
-	return writeJSON(w, status, envelope{Error: apiError{Code: code, Message: message, Fields: fields}})
+	return writeJSON(w, status, &envelope{Data: data})
 }

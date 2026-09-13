@@ -10,6 +10,22 @@ import (
 	"github.com/JonasCappe/book-management-api/internal/store"
 )
 
+// getBookHistoryHandler godoc
+//
+//	@Summary		List book history
+//	@Description	Returns paginated change history for a book, including soft-deleted books.
+//	@Tags			history
+//	@Produce		json
+//	@Param			bookID		path		int		true	"Book ID"
+//	@Param			page		query		int		false	"Page number"			default(1)	minimum(1)
+//	@Param			page_size	query		int		false	"Items per page"		default(20)	minimum(1)	maximum(100)
+//	@Param			change_type	query		string	false	"Change type"			Enums(created, updated, deleted)
+//	@Param			order		query		string	false	"Chronological order"	default(desc)	Enums(asc, desc)
+//	@Success		200			{object}	HistoryResponse
+//	@Failure		400			{object}	ErrorResponse
+//	@Failure		404			{object}	ErrorResponse
+//	@Failure		500			{object}	ErrorResponse
+//	@Router			/v1/books/{bookID}/history [get]
 func (app *application) getBookHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	bookID, err := app.readBookID(r)
 	if err != nil {
@@ -32,7 +48,7 @@ func (app *application) getBookHistoryHandler(w http.ResponseWriter, r *http.Req
 		app.internalServerError(w, r, err)
 		return
 	}
-	if err := writeJSON(w, http.StatusOK, page); err != nil {
+	if err := app.jsonResponse(w, http.StatusOK, page); err != nil {
 		app.internalServerError(w, r, err)
 	}
 }

@@ -57,3 +57,8 @@ migrate-version:
 migrate-force:
 	@test -n "$(version)" || (echo "usage: make migrate-force version=<n>" && exit 1)
 	$(DIRENV) sh -c 'migrate -path "$(MIGRATIONS_PATH)" -database "$$DB_DSN" force "$(version)"'
+
+.PHONY: gen-docs
+gen-docs:
+	swag fmt -d cmd/api
+	swag init -g main.go -d cmd/api,internal/data -o docs

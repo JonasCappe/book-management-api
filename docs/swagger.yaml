@@ -1,0 +1,424 @@
+basePath: /
+definitions:
+  data.Author:
+    properties:
+      bio:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+  data.Book:
+    properties:
+      authors:
+        items:
+          $ref: '#/definitions/data.Author'
+        type: array
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      publication_date:
+        example: "1937-09-21"
+        type: string
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  data.ChangeType:
+    enum:
+    - created
+    - updated
+    - deleted
+    type: string
+    x-enum-varnames:
+    - ChangeTypeCreated
+    - ChangeTypeUpdated
+    - ChangeTypeDeleted
+  data.HistoryEntry:
+    properties:
+      book_id:
+        type: integer
+      change_type:
+        $ref: '#/definitions/data.ChangeType'
+      changed_at:
+        type: string
+      changes:
+        type: object
+      description:
+        type: string
+      id:
+        type: integer
+    type: object
+  data.HistoryPage:
+    properties:
+      entries:
+        items:
+          $ref: '#/definitions/data.HistoryEntry'
+        type: array
+      pagination:
+        $ref: '#/definitions/data.Pagination'
+    type: object
+  data.Pagination:
+    properties:
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total_items:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  main.APIError:
+    properties:
+      code:
+        example: validation_failed
+        type: string
+      fields:
+        additionalProperties:
+          type: string
+        type: object
+      message:
+        example: request validation failed
+        type: string
+    type: object
+  main.BookResponse:
+    properties:
+      data:
+        $ref: '#/definitions/data.Book'
+    type: object
+  main.BooksResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/data.Book'
+        type: array
+    type: object
+  main.CreateBookPayload:
+    properties:
+      author_ids:
+        items:
+          type: integer
+        minItems: 1
+        type: array
+        uniqueItems: true
+      description:
+        maxLength: 1024
+        type: string
+      publication_date:
+        example: "1937-09-21"
+        type: string
+      title:
+        maxLength: 150
+        type: string
+    required:
+    - author_ids
+    - publication_date
+    - title
+    type: object
+  main.ErrorResponse:
+    properties:
+      error:
+        $ref: '#/definitions/main.APIError'
+    type: object
+  main.HealthData:
+    properties:
+      env:
+        example: development
+        type: string
+      status:
+        example: ok
+        type: string
+      version:
+        example: 0.0.1
+        type: string
+    type: object
+  main.HealthResponse:
+    properties:
+      data:
+        $ref: '#/definitions/main.HealthData'
+    type: object
+  main.HistoryResponse:
+    properties:
+      data:
+        $ref: '#/definitions/data.HistoryPage'
+    type: object
+  main.UpdateBookPayload:
+    properties:
+      author_ids:
+        items:
+          type: integer
+        minItems: 1
+        type: array
+        uniqueItems: true
+      description:
+        maxLength: 1024
+        type: string
+      publication_date:
+        example: "1937-09-21"
+        type: string
+      title:
+        maxLength: 150
+        type: string
+    type: object
+info:
+  contact:
+    email: jonas.cap@outlook.com
+    name: Jonas Cap
+    url: https://www.jonascap.com
+  description: A small backend service that manages books and keeps history of the
+    changes made to them.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  title: Go Book management - Backend
+paths:
+  /health:
+    get:
+      description: Returns the service status, environment, and API version.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.HealthResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+      summary: Check API health
+      tags:
+      - health
+  /v1/books:
+    get:
+      description: Returns all active books and their authors.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.BooksResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+      summary: List books
+      tags:
+      - books
+    post:
+      consumes:
+      - application/json
+      description: Creates a book with a publication date and one or more existing
+        authors.
+      parameters:
+      - description: Book to create
+        in: body
+        name: book
+        required: true
+        schema:
+          $ref: '#/definitions/main.CreateBookPayload'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/main.BookResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+      summary: Create a book
+      tags:
+      - books
+  /v1/books/{bookID}:
+    delete:
+      description: Soft-deletes a book while preserving its change history.
+      parameters:
+      - description: Book ID
+        in: path
+        name: bookID
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+      summary: Delete a book
+      tags:
+      - books
+    get:
+      description: Returns an active book and its authors.
+      parameters:
+      - description: Book ID
+        in: path
+        name: bookID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.BookResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+      summary: Retrieve a book
+      tags:
+      - books
+    patch:
+      consumes:
+      - application/json
+      description: Partially updates a book and records a human-readable history entry.
+      parameters:
+      - description: Book ID
+        in: path
+        name: bookID
+        required: true
+        type: integer
+      - description: Fields to update
+        in: body
+        name: book
+        required: true
+        schema:
+          $ref: '#/definitions/main.UpdateBookPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.BookResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+      summary: Update a book
+      tags:
+      - books
+  /v1/books/{bookID}/history:
+    get:
+      description: Returns paginated change history for a book, including soft-deleted
+        books.
+      parameters:
+      - description: Book ID
+        in: path
+        name: bookID
+        required: true
+        type: integer
+      - default: 1
+        description: Page number
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        maximum: 100
+        minimum: 1
+        name: page_size
+        type: integer
+      - description: Change type
+        enum:
+        - created
+        - updated
+        - deleted
+        in: query
+        name: change_type
+        type: string
+      - default: desc
+        description: Chronological order
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.HistoryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+      summary: List book history
+      tags:
+      - history
+schemes:
+- http
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
