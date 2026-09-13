@@ -7,88 +7,98 @@ import (
 	"errors"
 
 	"github.com/JonasCappe/book-management-api/internal/data"
+	"github.com/lib/pq"
 )
 
 type BookStore struct {
 	db *sql.DB
 }
 
-func (s *BookStore) Create(ctx context.Context, newBook *data.Book) (err error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+type bookQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
 
+func (s *BookStore) Create(ctx context.Context, book *data.Book) error {
+	if book.PublicationDate.IsZero() {
+		return ErrPublicationDateRequired
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	if err := ensureAuthorExists(ctx, tx, newBook.AuthorID); err != nil {
+	authorIDs := authorIDs(book.Authors)
+	if err := ensureAuthorsExist(ctx, tx, authorIDs); err != nil {
 		return err
 	}
 
 	query := `
-		INSERT INTO books (title, description, author_id) 
+		INSERT INTO books (title, description, publication_date)
 		VALUES ($1, $2, $3)
 		RETURNING id, created_at, updated_at;
 	`
-
-	if err := tx.QueryRowContext(ctx, query,
-		newBook.Title,
-		newBook.Description,
-		newBook.AuthorID,
-	).Scan(
-		&newBook.ID,
-		&newBook.CreatedAt,
-		&newBook.UpdatedAt,
-	); err != nil {
+	if err := tx.QueryRowContext(
+		ctx,
+		query,
+		book.Title,
+		book.Description,
+		book.PublicationDate,
+	).Scan(&book.ID, &book.CreatedAt, &book.UpdatedAt); err != nil {
 		return err
 	}
 
-	changes, err := json.Marshal(map[string]any{"after": newBook})
+	if err := replaceBookAuthors(ctx, tx, book.ID, authorIDs); err != nil {
+		return err
+	}
+	book.Authors, err = getAuthorsForBook(ctx, tx, book.ID)
 	if err != nil {
 		return err
 	}
-	if err := createHistoryEntry(ctx, tx, &data.HistoryEntry{
-		BookID:      newBook.ID,
-		ChangeType:  data.ChangeTypeCreated,
-		Description: "book created",
-		Changes:     changes,
-	}); err != nil {
+
+	if err := recordBookHistory(ctx, tx, book.ID, data.ChangeTypeCreated, "book created", map[string]any{"after": book}); err != nil {
 		return err
 	}
-
 	return tx.Commit()
 }
 
-func (s *BookStore) Update(ctx context.Context, updatedBook *data.Book) error {
+func (s *BookStore) Update(ctx context.Context, book *data.Book) error {
+	if book.PublicationDate.IsZero() {
+		return ErrPublicationDateRequired
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	previousBook, err := getBookByID(ctx, tx, updatedBook.ID, true)
+	previousBook, err := getBookByID(ctx, tx, book.ID, true)
 	if err != nil {
 		return err
 	}
-	if err := ensureAuthorExists(ctx, tx, updatedBook.AuthorID); err != nil {
+
+	authorIDs := authorIDs(book.Authors)
+	if err := ensureAuthorsExist(ctx, tx, authorIDs); err != nil {
 		return err
 	}
 
 	query := `
 		UPDATE books
-		SET title = $1, description = $2, author_id = $3, updated_at = NOW()
+		SET title = $1, description = $2, publication_date = $3, updated_at = NOW()
 		WHERE id = $4 AND deleted_at IS NULL
 		RETURNING updated_at;
 	`
-
 	err = tx.QueryRowContext(
 		ctx,
 		query,
-		updatedBook.Title,
-		updatedBook.Description,
-		updatedBook.AuthorID,
-		updatedBook.ID,
-	).Scan(&updatedBook.UpdatedAt)
+		book.Title,
+		book.Description,
+		book.PublicationDate,
+		book.ID,
+	).Scan(&book.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -96,23 +106,20 @@ func (s *BookStore) Update(ctx context.Context, updatedBook *data.Book) error {
 		return err
 	}
 
-	changes, err := json.Marshal(map[string]any{
-		"before": previousBook,
-		"after":  updatedBook,
-	})
+	if err := replaceBookAuthors(ctx, tx, book.ID, authorIDs); err != nil {
+		return err
+	}
+	book.Authors, err = getAuthorsForBook(ctx, tx, book.ID)
 	if err != nil {
 		return err
 	}
 
-	if err := createHistoryEntry(ctx, tx, &data.HistoryEntry{
-		BookID:      updatedBook.ID,
-		ChangeType:  data.ChangeTypeUpdated,
-		Description: "book updated",
-		Changes:     changes,
+	if err := recordBookHistory(ctx, tx, book.ID, data.ChangeTypeUpdated, "book updated", map[string]any{
+		"before": previousBook,
+		"after":  book,
 	}); err != nil {
 		return err
 	}
-
 	return tx.Commit()
 }
 
@@ -120,31 +127,39 @@ func (s *BookStore) GetByID(ctx context.Context, id int64) (*data.Book, error) {
 	return getBookByID(ctx, s.db, id, false)
 }
 
-type bookQueryer interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}
-
 func getBookByID(ctx context.Context, db bookQueryer, id int64, forUpdate bool) (*data.Book, error) {
 	query := `
-		SELECT id, title, description, author_id, created_at, updated_at
+		SELECT id, title, description, publication_date, created_at, updated_at
 		FROM books
 		WHERE id = $1 AND deleted_at IS NULL
 		LIMIT 1;
 	`
+	if forUpdate {
+		query = `
+			SELECT id, title, description, publication_date, created_at, updated_at
+			FROM books
+			WHERE id = $1 AND deleted_at IS NULL
+			FOR UPDATE;
+		`
+	}
 
 	book := &data.Book{}
 	err := db.QueryRowContext(ctx, query, id).Scan(
 		&book.ID,
 		&book.Title,
 		&book.Description,
-		&book.AuthorID,
+		&book.PublicationDate,
 		&book.CreatedAt,
 		&book.UpdatedAt,
 	)
-
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
+	if err != nil {
+		return nil, err
+	}
+
+	book.Authors, err = getAuthorsForBook(ctx, db, book.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -153,29 +168,25 @@ func getBookByID(ctx context.Context, db bookQueryer, id int64, forUpdate bool) 
 
 func (s *BookStore) GetAll(ctx context.Context) ([]data.Book, error) {
 	query := `
-		SELECT id, title, description, author_id, created_at, updated_at
+		SELECT id, title, description, publication_date, created_at, updated_at
 		FROM books
 		WHERE deleted_at IS NULL
 		ORDER BY id;
 	`
-
 	rows, err := s.db.QueryContext(ctx, query)
-
 	if err != nil {
 		return nil, err
 	}
-
 	defer rows.Close()
 
 	books := make([]data.Book, 0)
-
 	for rows.Next() {
 		var book data.Book
 		if err := rows.Scan(
 			&book.ID,
 			&book.Title,
 			&book.Description,
-			&book.AuthorID,
+			&book.PublicationDate,
 			&book.CreatedAt,
 			&book.UpdatedAt,
 		); err != nil {
@@ -183,9 +194,15 @@ func (s *BookStore) GetAll(ctx context.Context) ([]data.Book, error) {
 		}
 		books = append(books, book)
 	}
-
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+
+	for i := range books {
+		books[i].Authors, err = getAuthorsForBook(ctx, s.db, books[i].ID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return books, nil
 }
@@ -201,19 +218,7 @@ func (s *BookStore) Delete(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-
-	changes, err := json.Marshal(map[string]any{"before": book})
-
-	if err != nil {
-		return err
-	}
-
-	if err := createHistoryEntry(ctx, tx, &data.HistoryEntry{
-		BookID:      id,
-		ChangeType:  data.ChangeTypeDeleted,
-		Description: "book deleted",
-		Changes:     changes,
-	}); err != nil {
+	if err := recordBookHistory(ctx, tx, id, data.ChangeTypeDeleted, "book deleted", map[string]any{"before": book}); err != nil {
 		return err
 	}
 
@@ -225,7 +230,6 @@ func (s *BookStore) Delete(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return err
@@ -236,13 +240,98 @@ func (s *BookStore) Delete(ctx context.Context, id int64) error {
 	return tx.Commit()
 }
 
-func ensureAuthorExists(ctx context.Context, db bookQueryer, authorID int64) error {
-	var exists bool
-	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM authors WHERE id = $1)`, authorID).Scan(&exists); err != nil {
+func ensureAuthorsExist(ctx context.Context, db bookQueryer, authorIDs []int64) error {
+	if len(authorIDs) == 0 {
+		return ErrAuthorsRequired
+	}
+
+	var count int
+	if err := db.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM authors WHERE id = ANY($1)`,
+		pq.Array(authorIDs),
+	).Scan(&count); err != nil {
 		return err
 	}
-	if !exists {
+	if count != len(authorIDs) {
 		return ErrAuthorNotFound
 	}
 	return nil
+}
+
+func authorIDs(authors []data.Author) []int64 {
+	seen := make(map[int64]struct{}, len(authors))
+	ids := make([]int64, 0, len(authors))
+	for _, author := range authors {
+		if _, exists := seen[author.ID]; exists {
+			continue
+		}
+		seen[author.ID] = struct{}{}
+		ids = append(ids, author.ID)
+	}
+	return ids
+}
+
+func replaceBookAuthors(ctx context.Context, tx *sql.Tx, bookID int64, authorIDs []int64) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM book_authors WHERE book_id = $1`, bookID); err != nil {
+		return err
+	}
+	for _, authorID := range authorIDs {
+		if _, err := tx.ExecContext(
+			ctx,
+			`INSERT INTO book_authors (book_id, author_id) VALUES ($1, $2)`,
+			bookID,
+			authorID,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func getAuthorsForBook(ctx context.Context, db bookQueryer, bookID int64) ([]data.Author, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT authors.id, authors.name, authors.bio
+		FROM authors
+		INNER JOIN book_authors ON book_authors.author_id = authors.id
+		WHERE book_authors.book_id = $1
+		ORDER BY authors.id;
+	`, bookID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	authors := make([]data.Author, 0)
+	for rows.Next() {
+		var author data.Author
+		if err := rows.Scan(&author.ID, &author.Name, &author.Bio); err != nil {
+			return nil, err
+		}
+		authors = append(authors, author)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return authors, nil
+}
+
+func recordBookHistory(
+	ctx context.Context,
+	tx *sql.Tx,
+	bookID int64,
+	changeType data.ChangeType,
+	description string,
+	changesValue any,
+) error {
+	changes, err := json.Marshal(changesValue)
+	if err != nil {
+		return err
+	}
+	return createHistoryEntry(ctx, tx, &data.HistoryEntry{
+		BookID:      bookID,
+		ChangeType:  changeType,
+		Description: description,
+		Changes:     changes,
+	})
 }

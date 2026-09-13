@@ -11,15 +11,17 @@ import (
 )
 
 type CreateBookPayload struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	AuthorID    int64  `json:"author_id"`
+	Title           string    `json:"title"`
+	Description     string    `json:"description"`
+	PublicationDate data.Date `json:"publication_date"`
+	AuthorIDs       []int64   `json:"author_ids"`
 }
 
 type UpdateBookPayload struct {
-	Title       *string `json:"title"`
-	Description *string `json:"description"`
-	AuthorID    *int64  `json:"author_id"`
+	Title           *string    `json:"title"`
+	Description     *string    `json:"description"`
+	PublicationDate *data.Date `json:"publication_date"`
+	AuthorIDs       *[]int64   `json:"author_ids"`
 }
 
 func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request) {
@@ -31,15 +33,18 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	book := &data.Book{
-		Title:       payload.Title,
-		Description: payload.Description,
-		AuthorID:    payload.AuthorID,
+		Title:           payload.Title,
+		Description:     payload.Description,
+		PublicationDate: payload.PublicationDate,
+		Authors:         authorsFromIDs(payload.AuthorIDs),
 	}
 
 	ctx := r.Context()
 
 	if err := app.store.Books.Create(ctx, book); err != nil {
-		if errors.Is(err, store.ErrAuthorNotFound) {
+		if errors.Is(err, store.ErrAuthorNotFound) ||
+			errors.Is(err, store.ErrAuthorsRequired) ||
+			errors.Is(err, store.ErrPublicationDateRequired) {
 			app.badRequestError(w, r, err)
 			return
 		}
@@ -127,15 +132,20 @@ func (app *application) patchBookHandler(w http.ResponseWriter, r *http.Request)
 	if payload.Description != nil {
 		book.Description = *payload.Description
 	}
-	if payload.AuthorID != nil {
-		book.AuthorID = *payload.AuthorID
+	if payload.PublicationDate != nil {
+		book.PublicationDate = *payload.PublicationDate
+	}
+	if payload.AuthorIDs != nil {
+		book.Authors = authorsFromIDs(*payload.AuthorIDs)
 	}
 
 	if err := app.store.Books.Update(r.Context(), book); err != nil {
 		switch {
 		case errors.Is(err, store.ErrNotFound):
 			app.notFoundError(w, r, err)
-		case errors.Is(err, store.ErrAuthorNotFound):
+		case errors.Is(err, store.ErrAuthorNotFound),
+			errors.Is(err, store.ErrAuthorsRequired),
+			errors.Is(err, store.ErrPublicationDateRequired):
 			app.badRequestError(w, r, err)
 		default:
 			app.internalServerError(w, r, err)
@@ -166,4 +176,12 @@ func (app *application) readBookID(r *http.Request) (int64, error) {
 		return 0, errors.New("book ID must be a positive integer")
 	}
 	return id, nil
+}
+
+func authorsFromIDs(authorIDs []int64) []data.Author {
+	authors := make([]data.Author, len(authorIDs))
+	for i, id := range authorIDs {
+		authors[i] = data.Author{ID: id}
+	}
+	return authors
 }
