@@ -6,7 +6,6 @@ import (
 	"github.com/JonasCappe/book-management-api/internal/db"
 	"github.com/JonasCappe/book-management-api/internal/env"
 	"github.com/JonasCappe/book-management-api/internal/store"
-	"github.com/go-playground/validator/v10"
 )
 
 const version = "0.0.1"
@@ -38,13 +37,11 @@ func main() {
 	log.Println("database connection pool successfully established")
 
 	storage := store.NewStorage(database)
-	validate := validator.New(validator.WithRequiredStructEnabled())
-	configureValidator(validate)
+	
 
 	app := &application{
 		config:    cfg,
 		store:     storage,
-		validator: validate,
 	}
 
 	mux := app.mount()

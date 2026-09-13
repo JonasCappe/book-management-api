@@ -31,7 +31,9 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 		app.badRequestError(w, r, err)
 		return
 	}
-	if !app.validatePayload(w, r, payload) {
+
+	if err := Validate.Struct(payload); err != nil {
+		app.badRequestError(w, r, err)
 		return
 	}
 
@@ -139,7 +141,8 @@ func (app *application) patchBookHandler(w http.ResponseWriter, r *http.Request)
 		app.validationError(w, r, map[string]string{"body": "must contain at least one field"})
 		return
 	}
-	if !app.validatePayload(w, r, payload) {
+	if err := Validate.Struct(payload); err != nil {
+		app.badRequestError(w, r, err)
 		return
 	}
 
