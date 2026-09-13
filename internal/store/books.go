@@ -49,7 +49,7 @@ func (s *BookStore) Create(ctx context.Context, book *data.Book) error {
 		book.Description,
 		book.PublicationDate,
 	).Scan(&book.ID, &book.CreatedAt, &book.UpdatedAt); err != nil {
-		return err
+		return normalizeBookWriteError(err)
 	}
 
 	if err := replaceBookAuthors(ctx, tx, book.ID, authorIDs); err != nil {
@@ -57,7 +57,7 @@ func (s *BookStore) Create(ctx context.Context, book *data.Book) error {
 	}
 	book.Authors, err = getAuthorsForBook(ctx, tx, book.ID)
 	if err != nil {
-		return err
+		return normalizeBookWriteError(err)
 	}
 
 	description := fmt.Sprintf("Book %q was created", book.Title)
@@ -338,6 +338,14 @@ func recordBookHistory(
 		Description: description,
 		Changes:     changes,
 	})
+}
+
+func normalizeBookWriteError(err error) error {
+	var pqError *pq.Error
+	if errors.As(err, &pqError) && pqError.Code == "23505" && pqError.Constraint == "books_title_key" {
+		return ErrDuplicateTitle
+	}
+	return err
 }
 
 func describeBookChanges(before, after *data.Book) string {

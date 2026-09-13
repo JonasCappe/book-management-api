@@ -13,6 +13,7 @@ var (
 	ErrAuthorNotFound          = errors.New("author not found")
 	ErrAuthorsRequired         = errors.New("at least one author is required")
 	ErrPublicationDateRequired = errors.New("publication date is required")
+	ErrDuplicateTitle          = errors.New("a book with this title already exists")
 )
 
 type Storage struct {

@@ -8,11 +8,13 @@ import (
 	"github.com/JonasCappe/book-management-api/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-playground/validator/v10"
 )
 
 type application struct {
-	config config
-	store  store.Storage
+	config    config
+	store     store.Storage
+	validator *validator.Validate
 }
 
 type dbConfig struct {

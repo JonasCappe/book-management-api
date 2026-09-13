@@ -11,17 +11,17 @@ import (
 )
 
 type CreateBookPayload struct {
-	Title           string    `json:"title"`
-	Description     string    `json:"description"`
-	PublicationDate data.Date `json:"publication_date"`
-	AuthorIDs       []int64   `json:"author_ids"`
+	Title           string    `json:"title" validate:"required,notblank,max=150"`
+	Description     string    `json:"description" validate:"max=1024"`
+	PublicationDate data.Date `json:"publication_date" validate:"required"`
+	AuthorIDs       []int64   `json:"author_ids" validate:"required,min=1,unique,dive,gt=0"`
 }
 
 type UpdateBookPayload struct {
-	Title           *string    `json:"title"`
-	Description     *string    `json:"description"`
-	PublicationDate *data.Date `json:"publication_date"`
-	AuthorIDs       *[]int64   `json:"author_ids"`
+	Title           *string    `json:"title" validate:"omitempty,notblank,max=150"`
+	Description     *string    `json:"description" validate:"omitempty,max=1024"`
+	PublicationDate *data.Date `json:"publication_date" validate:"omitempty"`
+	AuthorIDs       *[]int64   `json:"author_ids" validate:"omitempty,min=1,unique,dive,gt=0"`
 }
 
 func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request) {
@@ -29,6 +29,9 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 
 	if err := readJSON(w, r, &payload); err != nil {
 		app.badRequestError(w, r, err)
+		return
+	}
+	if !app.validatePayload(w, r, payload) {
 		return
 	}
 
@@ -42,10 +45,17 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 	ctx := r.Context()
 
 	if err := app.store.Books.Create(ctx, book); err != nil {
+		if errors.Is(err, store.ErrDuplicateTitle) {
+			app.conflictError(w, r, err)
+			return
+		}
 		if errors.Is(err, store.ErrAuthorNotFound) ||
-			errors.Is(err, store.ErrAuthorsRequired) ||
-			errors.Is(err, store.ErrPublicationDateRequired) {
-			app.badRequestError(w, r, err)
+			errors.Is(err, store.ErrAuthorsRequired) {
+			app.validationError(w, r, map[string]string{"author_ids": err.Error()})
+			return
+		}
+		if errors.Is(err, store.ErrPublicationDateRequired) {
+			app.validationError(w, r, map[string]string{"publication_date": err.Error()})
 			return
 		}
 		app.internalServerError(w, r, err)
@@ -125,6 +135,13 @@ func (app *application) patchBookHandler(w http.ResponseWriter, r *http.Request)
 		app.badRequestError(w, r, err)
 		return
 	}
+	if payload.Title == nil && payload.Description == nil && payload.PublicationDate == nil && payload.AuthorIDs == nil {
+		app.validationError(w, r, map[string]string{"body": "must contain at least one field"})
+		return
+	}
+	if !app.validatePayload(w, r, payload) {
+		return
+	}
 
 	if payload.Title != nil {
 		book.Title = *payload.Title
@@ -143,10 +160,13 @@ func (app *application) patchBookHandler(w http.ResponseWriter, r *http.Request)
 		switch {
 		case errors.Is(err, store.ErrNotFound):
 			app.notFoundError(w, r, err)
+		case errors.Is(err, store.ErrDuplicateTitle):
+			app.conflictError(w, r, err)
 		case errors.Is(err, store.ErrAuthorNotFound),
-			errors.Is(err, store.ErrAuthorsRequired),
-			errors.Is(err, store.ErrPublicationDateRequired):
-			app.badRequestError(w, r, err)
+			errors.Is(err, store.ErrAuthorsRequired):
+			app.validationError(w, r, map[string]string{"author_ids": err.Error()})
+		case errors.Is(err, store.ErrPublicationDateRequired):
+			app.validationError(w, r, map[string]string{"publication_date": err.Error()})
 		default:
 			app.internalServerError(w, r, err)
 		}

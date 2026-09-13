@@ -46,10 +46,15 @@ func readJSON(w http.ResponseWriter, r *http.Request, data any) error {
 	return nil
 }
 
-func writeJSONError(w http.ResponseWriter, status int, msg string) error {
+func writeAPIError(w http.ResponseWriter, status int, code, message string, fields map[string]string) error {
+	type apiError struct {
+		Code    string            `json:"code"`
+		Message string            `json:"message"`
+		Fields  map[string]string `json:"fields,omitempty"`
+	}
 	type envelope struct {
-		Error string `json:"error"`
+		Error apiError `json:"error"`
 	}
 
-	return writeJSON(w, status, &envelope{Error: msg})
+	return writeJSON(w, status, envelope{Error: apiError{Code: code, Message: message, Fields: fields}})
 }
