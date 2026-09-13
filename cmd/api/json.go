@@ -63,5 +63,14 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string, fiel
 		Error apiError `json:"error"`
 	}
 
-	return writeJSON(w, status, envelope{Error: apiError{Code: code, Message: message, Fields: fields}})
+	return writeJSON(w, status, &envelope{Error: apiError{Code: code, Message: message, Fields: fields}})
+}
+
+
+func (app *application) jsonResponse(w http.ResponseWriter, status int, data any) error {
+	type envelope struct {
+		Data any `json:"data"`
+	}
+
+	return writeJSON(w, status, &envelope{Data: data})
 }

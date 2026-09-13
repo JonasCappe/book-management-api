@@ -66,7 +66,7 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Location", "/v1/books/"+strconv.FormatInt(book.ID, 10))
 
-	if err := writeJSON(w, http.StatusCreated, book); err != nil {
+	if err := app.jsonResponse(w, http.StatusCreated, book); err != nil {
 		app.internalServerError(w, r, err)
 		return
 	}
@@ -91,7 +91,7 @@ func (app *application) getBookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := writeJSON(w, http.StatusOK, book); err != nil {
+	if err := app.jsonResponse(w, http.StatusOK, book); err != nil {
 		app.internalServerError(w, r, err)
 	}
 }
@@ -176,7 +176,7 @@ func (app *application) patchBookHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := writeJSON(w, http.StatusOK, book); err != nil {
+	if err := app.jsonResponse(w, http.StatusOK, book); err != nil {
 		app.internalServerError(w, r, err)
 	}
 }
@@ -188,7 +188,7 @@ func (app *application) getBooksHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := writeJSON(w, http.StatusOK, books); err != nil {
+	if err := app.jsonResponse(w, http.StatusOK, books); err != nil {
 		app.internalServerError(w, r, err)
 	}
 }
