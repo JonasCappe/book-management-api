@@ -114,7 +114,7 @@ func (app *application) run(mux http.Handler) error {
 
 	shutDownCtx, cancel := context.WithTimeout(
 		context.Background(),
-		10^time.Second,
+		10*time.Second,
 	)
 
 	defer cancel()
