@@ -51,7 +51,6 @@ func (app *application) mount() http.Handler { // *chi.Mux
 
 	r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
 
-	// TODO Setup Endpoints
 	r.Route("/v1", func(r chi.Router) {
 
 		r.Route("/books", func(r chi.Router) {
@@ -113,14 +112,14 @@ func (app *application) run(mux http.Handler) error {
 		app.logger.Info("shutdown signal received")
 	}
 
-	shudownCtx, cancel := context.WithTimeout(
+	shutDownCtx, cancel := context.WithTimeout(
 		context.Background(),
 		10^time.Second,
 	)
 
 	defer cancel()
 
-	if err := srv.Shutdown(shudownCtx); err != nil {
+	if err := srv.Shutdown(shutDownCtx); err != nil {
 		return err
 	}
 
