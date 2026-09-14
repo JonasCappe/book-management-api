@@ -29,7 +29,9 @@ The service supports creating, retrieving, updating, listing, and deleting books
 * Request ID correlation
 * Multi-stage Docker image
 * Non-root container runtime
+* Development seed data
 * Automated tests
+* End-to-end API smoke test
 
 ## Tech Stack
 
@@ -45,6 +47,7 @@ The service supports creating, retrieving, updating, listing, and deleting books
 * Docker / Docker Compose
 * direnv
 * Make
+* Bash / curl for smoke testing
 
 ## Architecture
 
@@ -86,7 +89,10 @@ The project avoids introducing abstractions that do not provide meaningful value
 │   ├── db/                     # Database connection setup
 │   ├── env/                    # Environment configuration helpers
 │   └── store/                  # PostgreSQL persistence
-├── scripts/                    # Database initialization scripts
+├── scripts/
+│   ├── db_init.sql             # PostgreSQL bootstrap SQL
+│   ├── seed.sql                # Development seed data
+│   └── smoke.sh                # End-to-end API smoke test
 ├── Dockerfile                  # Multi-stage API image
 ├── docker-compose.yml          # Local PostgreSQL and API environment
 ├── .dockerignore
@@ -235,8 +241,10 @@ For local development:
 * Docker Compose
 * direnv
 * golang-migrate
-* swag CLI, when regenerating API documentation
 * Make
+* curl
+* Bash
+* swag CLI, when regenerating API documentation
 
 ## Configuration
 
@@ -296,7 +304,19 @@ Check the current migration version with:
 make migrate-version
 ```
 
-### 3. Run the API
+### 3. Optionally seed development data
+
+Books require one or more existing authors.
+
+Development-only author data can be inserted with:
+
+```bash
+make seed
+```
+
+The seed operation is safe to run repeatedly and is kept separate from schema migrations.
+
+### 4. Run the API
 
 ```bash
 make run
@@ -341,6 +361,12 @@ Swagger UI is available at:
 http://localhost:8080/swagger/index.html
 ```
 
+To add optional development authors:
+
+```bash
+make seed
+```
+
 Follow the API logs with:
 
 ```bash
@@ -361,6 +387,26 @@ make docker-down
 
 The runtime image uses a non-root user and contains only the compiled application and the minimal runtime environment required to execute it.
 
+## Development Seed Data
+
+Development seed data is stored in:
+
+```text
+scripts/seed.sql
+```
+
+Load it with:
+
+```bash
+make seed
+```
+
+The seed contains authors that can be referenced when creating books through the API.
+
+Seed data is intentionally kept separate from migrations because it is development and testing data rather than part of the database schema.
+
+The seed script is designed to be repeatable and does not create duplicate authors when run multiple times.
+
 ## Available Make Targets
 
 Display all available development commands with:
@@ -371,10 +417,13 @@ make help
 
 The Makefile provides commands for:
 
-* running and testing the API;
+* running the API;
+* running automated tests;
 * managing PostgreSQL;
 * creating and applying database migrations;
+* inserting development seed data;
 * building and managing the Docker environment;
+* running the end-to-end smoke test;
 * regenerating Swagger documentation.
 
 Common commands include:
@@ -382,11 +431,13 @@ Common commands include:
 ```bash
 make run
 make test
+make smoke
 
 make db-up
 make db-down
 make db-logs
 make db-config
+make seed
 
 make migrate-up
 make migrate-down
@@ -454,6 +505,14 @@ Duplicate author IDs are rejected by request validation.
 
 A duplicate book title results in a `409 Conflict` response.
 
+If using the development environment, run:
+
+```bash
+make seed
+```
+
+before creating books manually so that existing author IDs are available.
+
 ## Partial Updates
 
 `PATCH` uses optional fields so omitted properties remain unchanged.
@@ -514,7 +573,7 @@ Book history supports pagination, filtering by change type, and ordering.
 
 History entries remain available after a book has been soft-deleted.
 
-The history endpoint supports the following concepts:
+The history endpoint supports:
 
 * pagination;
 * filtering by change type;
@@ -697,9 +756,13 @@ Create a new migration pair with:
 make migrate-create name=add_example_column
 ```
 
+Development seed data is deliberately not included in migrations.
+
 ## Testing
 
-Run the full Go test suite with:
+### Unit and integration tests
+
+Run the Go test suite with:
 
 ```bash
 make test
@@ -713,13 +776,68 @@ go test ./...
 
 Tests cover API helpers, request and query validation, history behavior, and persistence-related functionality.
 
-A basic Docker smoke test can be performed with:
+### End-to-end smoke test
+
+The repository also contains a lightweight end-to-end smoke test:
+
+```text
+scripts/smoke.sh
+```
+
+The smoke test exercises the running application through its HTTP API rather than calling handlers or storage methods directly.
+
+It verifies the primary workflow:
+
+```text
+health check
+    ↓
+create book
+    ↓
+retrieve book
+    ↓
+update book
+    ↓
+retrieve history
+    ↓
+list/filter books
+    ↓
+delete book
+    ↓
+verify book returns 404
+    ↓
+verify history remains available
+```
+
+Start the Docker environment and load the development authors:
 
 ```bash
 make docker-up
+make seed
+```
 
-curl -i http://localhost:8080/health
+Then run:
 
+```bash
+make smoke
+```
+
+A successful run ends with:
+
+```text
+Smoke test passed.
+```
+
+The smoke test is intentionally focused on verifying that the fully assembled application can execute its critical workflow.
+
+Detailed validation and edge-case behavior remain covered by the Go test suite rather than duplicating those assertions in the shell smoke test.
+
+A complete local verification can therefore be run with:
+
+```bash
+make test
+make docker-up
+make seed
+make smoke
 make docker-down
 ```
 
@@ -793,6 +911,22 @@ The storage layer enforces invariants that depend on persisted state, such as re
 
 This keeps client-facing validation useful without relying solely on request-level checks for database-backed constraints.
 
+### Seed data
+
+Development seed data is kept separate from database migrations.
+
+Migrations define the database schema and invariants, while seed data exists only to make local development and end-to-end testing easier.
+
+The seed currently provides authors because books require existing author references before they can be created through the API.
+
+### Smoke testing
+
+The smoke test uses the public HTTP interface and a real PostgreSQL database.
+
+This provides a lightweight verification that routing, request handling, persistence, transactions, history tracking, and Docker networking work together correctly.
+
+It intentionally does not replace focused Go tests.
+
 ### Docker image
 
 The API uses a multi-stage Docker build.
@@ -821,6 +955,8 @@ Further concerns for a full production deployment depend on the surrounding plat
 * dependency and container scanning;
 * centralized log collection;
 * monitoring and alerting.
+
+Development seed data and the smoke-test tooling are intended for development and verification only and are not part of the production application runtime.
 
 These concerns should be implemented according to the environment in which the service is deployed rather than introducing platform-specific infrastructure into the core domain unnecessarily.
 

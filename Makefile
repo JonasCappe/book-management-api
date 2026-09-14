@@ -1,5 +1,5 @@
 .PHONY: \
-	help run test \
+	help run test smoke seed \
 	db-up db-down db-init db-logs db-config \
 	migrate-create migrate-up migrate-down migrate-version migrate-force \
 	docker-build docker-up docker-down docker-logs \
@@ -20,6 +20,7 @@ help:
 	@echo "  make db-init                     Apply database bootstrap SQL manually"
 	@echo "  make db-logs                     Follow PostgreSQL logs"
 	@echo "  make db-config                   Validate Docker Compose configuration"
+	@echo "  make seed                        Insert development seed data"
 	@echo ""
 	@echo "Migrations:"
 	@echo "  make migrate-up                  Apply pending migrations"
@@ -36,12 +37,22 @@ help:
 	@echo ""
 	@echo "Documentation:"
 	@echo "  make gen-docs                    Regenerate Swagger documentation"
+	@echo ""
+	@echo "Testing:"
+	@echo "  make test                        Run all Go tests"
+	@echo "  make smoke                       Run the API end-to-end smoke test"
 
 run:
 	$(DIRENV) go run ./cmd/api
 
 test:
 	$(DIRENV) go test ./...
+
+seed:
+	$(DIRENV) sh -c 'docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" < scripts/seed.sql'
+
+smoke:
+	$(DIRENV) ./scripts/smoke.sh
 
 db-up:
 	$(COMPOSE) up -d --wait postgres
