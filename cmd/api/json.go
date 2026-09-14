@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 	nonstandard "github.com/go-playground/validator/v10/non-standard/validators"
@@ -15,6 +17,15 @@ var Validate *validator.Validate
 
 func init() {
 	Validate = validator.New(validator.WithRequiredStructEnabled())
+	Validate.RegisterTagNameFunc(func(field reflect.StructField) string {
+		name := strings.SplitN(field.Tag.Get("json"), ",", 2)[0]
+
+		if name == "-" {
+			return ""
+		}
+
+		return name
+	})
 
 	if err := Validate.RegisterValidation("notblank", nonstandard.NotBlank); err != nil {
 		panic(err)
