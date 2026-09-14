@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"net/http"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,6 +21,7 @@ import (
 type application struct {
 	config config
 	store  store.Storage
+	logger *slog.Logger
 }
 
 type dbConfig struct {
@@ -41,8 +42,7 @@ func (app *application) mount() http.Handler { // *chi.Mux
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP) // TODO: REPLACE
-	r.Use(middleware.Logger)
+	r.Use(app.requestLogger)
 	r.Use(middleware.Recoverer)
 
 	r.Use(middleware.Timeout(60 * time.Second))
@@ -94,7 +94,10 @@ func (app *application) run(mux http.Handler) error {
 	serverError := make(chan error, 1)
 
 	go func() {
-		log.Printf("server started on address: %s", app.config.addr)
+		app.logger.Info(
+			"server started",
+			"address", app.config.addr,
+		)
 		serverError <- srv.ListenAndServe()
 	}()
 
@@ -107,7 +110,7 @@ func (app *application) run(mux http.Handler) error {
 		return err
 
 	case <-shutdownSignal.Done():
-		log.Println("shutdown signal received")
+		app.logger.Info("shutdown signal received")
 	}
 
 	shudownCtx, cancel := context.WithTimeout(
@@ -126,7 +129,7 @@ func (app *application) run(mux http.Handler) error {
 		return err
 	}
 
-	log.Println("server shutdown complete")
+	app.logger.Info("server shutdown complete")
 
 	return nil
 }
