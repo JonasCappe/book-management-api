@@ -10,6 +10,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
+
+	"context"
+	"errors"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 type application struct {
@@ -69,7 +75,7 @@ func (app *application) run(mux http.Handler) error {
 	docs.SwaggerInfo.Host = app.config.apiURL
 	docs.SwaggerInfo.BasePath = "/"
 
-	srv := http.Server{
+	srv := &http.Server{
 		Addr:         app.config.addr,
 		Handler:      mux,
 		WriteTimeout: 30 * time.Second,
@@ -77,7 +83,50 @@ func (app *application) run(mux http.Handler) error {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	log.Printf("server started on address: %s", app.config.addr)
+	shutdownSignal, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
 
-	return srv.ListenAndServe()
+	defer stop()
+
+	serverError := make(chan error, 1)
+
+	go func() {
+		log.Printf("server started on address: %s", app.config.addr)
+		serverError <- srv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serverError:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+
+		return err
+
+	case <-shutdownSignal.Done():
+		log.Println("shutdown signal received")
+	}
+
+	shudownCtx, cancel := context.WithTimeout(
+		context.Background(),
+		10^time.Second,
+	)
+
+	defer cancel()
+
+	if err := srv.Shutdown(shudownCtx); err != nil {
+		return err
+	}
+
+	err := <-serverError
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+
+	log.Println("server shutdown complete")
+
+	return nil
 }
