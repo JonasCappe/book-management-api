@@ -570,7 +570,6 @@ Further concerns for a full production deployment depend on the surrounding plat
 * authentication and authorization
 * structured logging and centralized log collection
 * metrics and distributed tracing
-* graceful shutdown
 * readiness checks
 * TLS termination
 * secret management
