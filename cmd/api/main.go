@@ -23,9 +23,6 @@ const version = "0.0.1"
 
 // @BasePath					/
 // @schemes					http
-// @securityDefinitions.apikey	ApiKeyAuth
-// @in							header
-// @name						Authorization
 func main() {
 	cfg := config{
 		addr:   env.GetString("ADDR", ":8080"),
