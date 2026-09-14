@@ -200,21 +200,41 @@ func getBookByID(ctx context.Context, db bookQueryer, id int64, forUpdate bool) 
 }
 
 func (s *BookStore) GetAll(ctx context.Context, filters data.BookQuery) (data.BookPage, error) {
-	sortColumns := map[string]string{
-		"id":               "id",
-		"title":            "title",
-		"publication_date": "publication_date",
-		"created_at":       "created_at",
-		"updated_at":       "updated_at",
+	var orderBy string
+
+	switch filters.OrderBy {
+		case "id":
+			orderBy = "id"
+		case "title":
+			orderBy = "title"
+		case "publication_date":
+			orderBy = "publication_date"
+		case "created_at":
+			orderBy = "created_at"
+		case "updated_at":
+			orderBy = "updated_at"
+		default:
+			return data.BookPage{}, fmt.Errorf(
+				"unsupported book sort field %q",
+				filters.OrderBy,
+			)
 	}
-	orderBy, valid := sortColumns[filters.OrderBy]
-	if !valid {
-		return data.BookPage{}, fmt.Errorf("unsupported book sort field %q", filters.OrderBy)
+
+	var order string
+
+	switch strings.ToLower(filters.Order) {
+		case "asc":
+			order = "ASC"
+		case "desc":
+			order = "DESC"
+		default:
+			return data.BookPage{}, fmt.Errorf(
+				"unsupported book sort order %q",
+				filters.Order,
+			)
 	}
-	order := strings.ToUpper(filters.Order)
-	if order != "ASC" && order != "DESC" {
-		return data.BookPage{}, fmt.Errorf("unsupported book sort order %q", filters.Order)
-	}
+
+	
 
 	conditions := []string{"deleted_at IS NULL"}
 	args := make([]any, 0, 6)
