@@ -11,3 +11,11 @@ type Book struct {
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
+
+// Application representation of requested changes
+type BookUpdate struct {
+	Title           *string
+	Description     *string
+	PublicationDate *Date
+	AuthorIDs         *[]int64
+}

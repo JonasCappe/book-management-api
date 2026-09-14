@@ -67,25 +67,49 @@ func (s *BookStore) Create(ctx context.Context, book *data.Book) error {
 	return tx.Commit()
 }
 
-func (s *BookStore) Update(ctx context.Context, book *data.Book) error {
-	if book.PublicationDate.IsZero() {
+func (s *BookStore) Update(ctx context.Context, id int64, update data.BookUpdate) (*data.Book, error) {
+	/*if book.PublicationDate.IsZero() {
 		return ErrPublicationDateRequired
-	}
+	}*/
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback()
 
-	previousBook, err := getBookByID(ctx, tx, book.ID, true)
+	previousBook, err := getBookByID(ctx, tx, id, true)
 	if err != nil {
-		return err
+		return nil, err
+	}
+
+	book:= *previousBook // locked current state
+
+	
+
+	if update.Title != nil {
+		book.Title = *update.Title
+	}
+
+	if update.Description != nil {
+		book.Description = *update.Description
+	}
+
+	if update.PublicationDate != nil {
+		book.PublicationDate = *update.PublicationDate
+	}
+
+	if update.AuthorIDs != nil {
+		book.Authors = authorsFromIDs(*update.AuthorIDs)
+	}
+
+	if book.PublicationDate.IsZero() {
+		return nil, ErrPublicationDateRequired
 	}
 
 	authorIDs := authorIDs(book.Authors)
 	if err := ensureAuthorsExist(ctx, tx, authorIDs); err != nil {
-		return err
+		return nil, err
 	}
 
 	query := `
@@ -104,28 +128,32 @@ func (s *BookStore) Update(ctx context.Context, book *data.Book) error {
 	).Scan(&book.UpdatedAt)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
+		return nil, ErrNotFound
 	}
 
 	if err != nil {
-		return normalizeBookWriteError(err)
+		return nil, normalizeBookWriteError(err)
 	}
 
 	if err := replaceBookAuthors(ctx, tx, book.ID, authorIDs); err != nil {
-		return err
+		return nil, err
 	}
 	book.Authors, err = getAuthorsForBook(ctx, tx, book.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	if err := recordBookHistory(ctx, tx, book.ID, data.ChangeTypeUpdated, describeBookChanges(previousBook, book), map[string]any{
+	if err := recordBookHistory(ctx, tx, book.ID, data.ChangeTypeUpdated, describeBookChanges(previousBook, &book), map[string]any{
 		"before": previousBook,
 		"after":  book,
 	}); err != nil {
-		return err
+		return nil, err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return &book, nil
 }
 
 func (s *BookStore) GetByID(ctx context.Context, id int64) (*data.Book, error) {
@@ -448,4 +476,15 @@ func describeBookChanges(before, after *data.Book) string {
 		return "Book was updated without visible field changes"
 	}
 	return strings.Join(descriptions, "; ")
+}
+
+
+func authorsFromIDs(ids []int64) []data.Author {
+	authors := make([]data.Author, len(ids))
+
+	for i, id := range ids {
+		authors[i] = data.Author{ID: id}
+	}
+
+	return authors
 }

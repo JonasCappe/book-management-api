@@ -19,7 +19,7 @@ var (
 type Storage struct {
 	Books interface {
 		Create(context.Context, *data.Book) error
-		Update(context.Context, *data.Book) error
+		Update(context.Context, int64, data.BookUpdate) (*data.Book, error)
 		GetByID(context.Context, int64) (*data.Book, error)
 		GetAll(context.Context, data.BookQuery) (data.BookPage, error)
 		Delete(context.Context, int64) error
