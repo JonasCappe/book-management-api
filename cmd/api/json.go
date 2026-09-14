@@ -8,12 +8,17 @@ import (
 	"net/http"
 
 	"github.com/go-playground/validator/v10"
+	nonstandard "github.com/go-playground/validator/v10/non-standard/validators"
 )
 
 var Validate *validator.Validate
 
 func init() {
 	Validate = validator.New(validator.WithRequiredStructEnabled())
+
+	if err := Validate.RegisterValidation("notblank", nonstandard.NotBlank); err != nil {
+		panic(err)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) error {
