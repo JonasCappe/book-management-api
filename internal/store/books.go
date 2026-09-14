@@ -102,11 +102,13 @@ func (s *BookStore) Update(ctx context.Context, book *data.Book) error {
 		book.PublicationDate,
 		book.ID,
 	).Scan(&book.UpdatedAt)
+
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
+
 	if err != nil {
-		return err
+		return normalizeBookWriteError(err)
 	}
 
 	if err := replaceBookAuthors(ctx, tx, book.ID, authorIDs); err != nil {
