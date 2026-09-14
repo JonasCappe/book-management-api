@@ -1,7 +1,8 @@
 package main
 
 import (
-	"log"
+	"log/slog"
+	"os"
 
 	"github.com/JonasCappe/book-management-api/internal/db"
 	"github.com/JonasCappe/book-management-api/internal/env"
@@ -38,6 +39,12 @@ func main() {
 		env: env.GetString("ENVIRONMENT", "development"),
 	}
 
+	logger := slog.New(
+		slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		}),
+	)
+
 	database, err := db.New(
 		cfg.db.dsn,
 		cfg.db.maxOpenConns,
@@ -46,23 +53,26 @@ func main() {
 	)
 
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("failed to initialize database", "error", err)
+		os.Exit(1)
 	}
 
 	defer database.Close()
-	log.Println("database connection pool successfully established")
+	logger.Info("database connection pool established")
 
 	storage := store.NewStorage(database)
 
 	app := &application{
 		config: cfg,
 		store:  storage,
+		logger: logger,
 	}
 
 	mux := app.mount()
 
 	if err := app.run(mux); err != nil {
-		log.Fatal(err)
+		logger.Error("application stopped with error", "error", err)
+		os.Exit(1)
 	}
 
 }
