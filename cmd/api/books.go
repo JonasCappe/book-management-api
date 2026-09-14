@@ -176,15 +176,6 @@ func (app *application) patchBookHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	book, err := app.store.Books.GetByID(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			app.notFoundError(w, r, err)
-			return
-		}
-		app.internalServerError(w, r, err)
-		return
-	}
 
 	var payload UpdateBookPayload
 	if err := readJSON(w, r, &payload); err != nil {
@@ -200,33 +191,41 @@ func (app *application) patchBookHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if payload.Title != nil {
-		book.Title = *payload.Title
-	}
-	if payload.Description != nil {
-		book.Description = *payload.Description
-	}
-	if payload.PublicationDate != nil {
-		book.PublicationDate = *payload.PublicationDate
-	}
-	if payload.AuthorIDs != nil {
-		book.Authors = authorsFromIDs(*payload.AuthorIDs)
+	update := data.BookUpdate{
+		Title:           payload.Title,
+		Description:     payload.Description,
+		PublicationDate: payload.PublicationDate,
+		AuthorIDs:       payload.AuthorIDs,
 	}
 
-	if err := app.store.Books.Update(r.Context(), book); err != nil {
+	book, err := app.store.Books.Update(r.Context(), id, update)
+	if err != nil {
 		switch {
-		case errors.Is(err, store.ErrNotFound):
-			app.notFoundError(w, r, err)
-		case errors.Is(err, store.ErrDuplicateTitle):
-			app.conflictError(w, r, err)
-		case errors.Is(err, store.ErrAuthorNotFound),
-			errors.Is(err, store.ErrAuthorsRequired):
-			app.validationError(w, r, map[string]string{"author_ids": err.Error()})
-		case errors.Is(err, store.ErrPublicationDateRequired):
-			app.validationError(w, r, map[string]string{"publication_date": err.Error()})
-		default:
+			case errors.Is(err, store.ErrNotFound):
+				app.notFoundError(w, r, err)
+			
+			case errors.Is(err, store.ErrDuplicateTitle):
+				app.conflictError(w, r, err)
+			
+			case errors.Is(err, store.ErrAuthorNotFound),
+				errors.Is(err, store.ErrAuthorsRequired):
+				app.validationError(
+					w,
+					r,
+					map[string]string{"author_ids": err.Error()},
+				)
+			
+			case errors.Is(err, store.ErrPublicationDateRequired):
+				app.validationError(
+					w,
+					r,
+					map[string]string{"publication_date": err.Error()},
+				)
+			
+			default:
 			app.internalServerError(w, r, err)
 		}
+	
 		return
 	}
 
