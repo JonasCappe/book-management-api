@@ -282,6 +282,12 @@ By default, using the example environment configuration, the API listens on:
 ```text
 http://localhost:8080
 ```
+## Running with Docker
+
+Build and start the API and PostgreSQL:
+
+```bash
+docker compose up --build
 
 ## Available Make Targets
 
@@ -568,7 +574,6 @@ The project aims to demonstrate production-oriented application design while rem
 Further concerns for a full production deployment depend on the surrounding platform and deployment environment and may include:
 
 * authentication and authorization
-* structured logging and centralized log collection
 * metrics and distributed tracing
 * readiness checks
 * TLS termination
