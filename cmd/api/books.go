@@ -48,7 +48,7 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := Validate.Struct(payload); err != nil {
-		app.badRequestError(w, r, err)
+		app.validationError(w, r, validationFields(err))
 		return
 	}
 
@@ -176,7 +176,6 @@ func (app *application) patchBookHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-
 	var payload UpdateBookPayload
 	if err := readJSON(w, r, &payload); err != nil {
 		app.badRequestError(w, r, err)
@@ -186,8 +185,9 @@ func (app *application) patchBookHandler(w http.ResponseWriter, r *http.Request)
 		app.validationError(w, r, map[string]string{"body": "must contain at least one field"})
 		return
 	}
+
 	if err := Validate.Struct(payload); err != nil {
-		app.badRequestError(w, r, err)
+		app.validationError(w, r, validationFields(err))
 		return
 	}
 
@@ -201,31 +201,31 @@ func (app *application) patchBookHandler(w http.ResponseWriter, r *http.Request)
 	book, err := app.store.Books.Update(r.Context(), id, update)
 	if err != nil {
 		switch {
-			case errors.Is(err, store.ErrNotFound):
-				app.notFoundError(w, r, err)
-			
-			case errors.Is(err, store.ErrDuplicateTitle):
-				app.conflictError(w, r, err)
-			
-			case errors.Is(err, store.ErrAuthorNotFound),
-				errors.Is(err, store.ErrAuthorsRequired):
-				app.validationError(
-					w,
-					r,
-					map[string]string{"author_ids": err.Error()},
-				)
-			
-			case errors.Is(err, store.ErrPublicationDateRequired):
-				app.validationError(
-					w,
-					r,
-					map[string]string{"publication_date": err.Error()},
-				)
-			
-			default:
+		case errors.Is(err, store.ErrNotFound):
+			app.notFoundError(w, r, err)
+
+		case errors.Is(err, store.ErrDuplicateTitle):
+			app.conflictError(w, r, err)
+
+		case errors.Is(err, store.ErrAuthorNotFound),
+			errors.Is(err, store.ErrAuthorsRequired):
+			app.validationError(
+				w,
+				r,
+				map[string]string{"author_ids": err.Error()},
+			)
+
+		case errors.Is(err, store.ErrPublicationDateRequired):
+			app.validationError(
+				w,
+				r,
+				map[string]string{"publication_date": err.Error()},
+			)
+
+		default:
 			app.internalServerError(w, r, err)
 		}
-	
+
 		return
 	}
 
