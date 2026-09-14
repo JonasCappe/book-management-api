@@ -24,6 +24,11 @@ The service supports creating, retrieving, updating, listing, and deleting books
 * OpenAPI / Swagger documentation
 * Health endpoint
 * HTTP request timeouts
+* Graceful HTTP server shutdown
+* Structured JSON logging
+* Request ID correlation
+* Multi-stage Docker image
+* Non-root container runtime
 * Automated tests
 
 ## Tech Stack
@@ -34,10 +39,12 @@ The service supports creating, retrieving, updating, listing, and deleting books
 * `database/sql`
 * `lib/pq`
 * `go-playground/validator`
+* `log/slog`
 * Swagger / swaggo
 * golang-migrate
-* Docker Compose
+* Docker / Docker Compose
 * direnv
+* Make
 
 ## Architecture
 
@@ -61,7 +68,7 @@ Storage interfaces
 PostgreSQL
 ```
 
-Cross-cutting concerns such as JSON handling, validation, error responses, pagination, configuration, and database access are separated into dedicated components.
+Cross-cutting concerns such as JSON handling, validation, error responses, pagination, configuration, logging, and database access are separated into dedicated components.
 
 The project avoids introducing abstractions that do not provide meaningful value for the current scope of this exercise.
 
@@ -80,9 +87,13 @@ The project avoids introducing abstractions that do not provide meaningful value
 │   ├── env/                    # Environment configuration helpers
 │   └── store/                  # PostgreSQL persistence
 ├── scripts/                    # Database initialization scripts
-├── docker-compose.yml
+├── Dockerfile                  # Multi-stage API image
+├── docker-compose.yml          # Local PostgreSQL and API environment
+├── .dockerignore
+├── .env.example
+├── .envrc.example
 ├── Makefile
-└── .env.example
+└── README.md
 ```
 
 ## Data Model
@@ -194,6 +205,8 @@ SELECT book FOR UPDATE
 
 validate referenced authors
 
+apply requested changes
+
 UPDATE book
 
 replace author relationships
@@ -211,6 +224,8 @@ This means an application-level book mutation cannot successfully commit without
 
 Updates use `SELECT ... FOR UPDATE` to lock the affected book while its previous state is being read and the corresponding history entry is constructed.
 
+Partial updates are applied to the locked database state inside the transaction. This prevents omitted PATCH fields from being overwritten by stale values from an earlier read.
+
 ## Requirements
 
 For local development:
@@ -225,16 +240,22 @@ For local development:
 
 ## Configuration
 
-Copy the example environment file:
+Create the local environment files:
 
 ```bash
 cp .env.example .env
+cp .envrc.example .envrc
+direnv allow
 ```
 
-The application currently supports the following configuration:
+The example configuration is intended for local development only.
+
+The application supports configuration such as:
 
 ```env
 ADDR=":8080"
+EXTERNALURL="localhost:8080"
+ENVIRONMENT="development"
 
 DB_DSN="postgres://postgres:postgres@localhost:5432/book-management?sslmode=disable"
 
@@ -247,6 +268,8 @@ POSTGRES_USER="postgres"
 POSTGRES_PASSWORD="postgres"
 ```
 
+The API listens on port `8080` by default, and PostgreSQL is exposed on `localhost:5432`.
+
 Do not use the example database credentials in a production environment.
 
 ## Running Locally
@@ -257,7 +280,9 @@ Do not use the example database credentials in a production environment.
 make db-up
 ```
 
-The development environment uses PostgreSQL 17 running through Docker Compose.
+PostgreSQL 17 runs through Docker Compose.
+
+The command waits until the database reports healthy before returning.
 
 ### 2. Apply migrations
 
@@ -277,25 +302,80 @@ make migrate-version
 make run
 ```
 
-By default, using the example environment configuration, the API listens on:
+The API is available at:
 
 ```text
 http://localhost:8080
 ```
+
+Swagger UI is available at:
+
+```text
+http://localhost:8080/swagger/index.html
+```
+
 ## Running with Docker
 
-Build and start the API and PostgreSQL:
+The API and PostgreSQL can also be run together through Docker Compose.
 
 ```bash
-docker compose up --build
+make docker-up
+```
+
+This command:
+
+1. starts PostgreSQL and waits until it is healthy;
+2. applies pending database migrations;
+3. builds the API image;
+4. starts the API container.
+
+The API is available at:
+
+```text
+http://localhost:8080
+```
+
+Swagger UI is available at:
+
+```text
+http://localhost:8080/swagger/index.html
+```
+
+Follow the API logs with:
+
+```bash
+make docker-logs
+```
+
+Build the API image without starting it:
+
+```bash
+make docker-build
+```
+
+Stop the complete Docker environment with:
+
+```bash
+make docker-down
+```
+
+The runtime image uses a non-root user and contains only the compiled application and the minimal runtime environment required to execute it.
 
 ## Available Make Targets
 
-Display the available development commands:
+Display all available development commands with:
 
 ```bash
 make help
 ```
+
+The Makefile provides commands for:
+
+* running and testing the API;
+* managing PostgreSQL;
+* creating and applying database migrations;
+* building and managing the Docker environment;
+* regenerating Swagger documentation.
 
 Common commands include:
 
@@ -311,12 +391,14 @@ make db-config
 make migrate-up
 make migrate-down
 make migrate-version
-```
-
-Create a new migration:
-
-```bash
 make migrate-create name=add_example_column
+
+make docker-build
+make docker-up
+make docker-down
+make docker-logs
+
+make gen-docs
 ```
 
 ## API
@@ -364,11 +446,13 @@ Example:
 
 The API requires:
 
-* a non-blank title
-* a publication date
-* at least one existing author
+* a non-blank title;
+* a publication date;
+* at least one existing author.
 
 Duplicate author IDs are rejected by request validation.
+
+A duplicate book title results in a `409 Conflict` response.
 
 ## Partial Updates
 
@@ -385,6 +469,8 @@ Example:
 
 A request containing no update fields is rejected.
 
+Partial changes are applied inside the same transaction that locks and updates the book. This prevents concurrent PATCH requests from unintentionally restoring stale values for fields they did not modify.
+
 ## Listing Books
 
 The book collection supports pagination, filtering, and ordering.
@@ -397,16 +483,16 @@ GET /v1/books?page=1&page_size=20&title=hobbit&order_by=title&order=asc
 
 Supported query parameters:
 
-| Parameter        | Description                             |
-| ---------------- | --------------------------------------- |
-| `page`           | Page number, starting at 1              |
-| `page_size`      | Number of records per page, maximum 100 |
-| `title`          | Partial, case-insensitive title filter  |
-| `author_id`      | Filter by author                        |
-| `published_from` | Minimum publication date                |
-| `published_to`   | Maximum publication date                |
-| `order_by`       | Sort field                              |
-| `order`          | `asc` or `desc`                         |
+| Parameter | Description |
+| --- | --- |
+| `page` | Page number, starting at 1 |
+| `page_size` | Number of records per page, maximum 100 |
+| `title` | Partial, case-insensitive title filter |
+| `author_id` | Filter by author |
+| `published_from` | Minimum publication date |
+| `published_to` | Maximum publication date |
+| `order_by` | Sort field |
+| `order` | `asc` or `desc` |
 
 Supported `order_by` values:
 
@@ -428,20 +514,50 @@ Book history supports pagination, filtering by change type, and ordering.
 
 History entries remain available after a book has been soft-deleted.
 
+The history endpoint supports the following concepts:
+
+* pagination;
+* filtering by change type;
+* ascending or descending ordering.
+
+Each entry includes both a human-readable description and structured JSON describing the associated state change.
+
 ## JSON Request Handling
 
 JSON request bodies are deliberately strict.
 
 The API:
 
-* limits request bodies to 1 MiB
-* rejects malformed JSON
-* rejects unknown fields
-* rejects incorrect value types
-* rejects empty request bodies
-* rejects requests containing multiple JSON objects
+* limits request bodies to 1 MiB;
+* rejects malformed JSON;
+* rejects unknown fields;
+* rejects incorrect value types;
+* rejects empty request bodies;
+* rejects requests containing multiple JSON objects.
 
 This helps detect client mistakes rather than silently ignoring invalid input.
+
+## Validation
+
+Request validation uses `go-playground/validator`.
+
+Semantically invalid request fields return `422 Unprocessable Entity` with field-specific errors.
+
+For example:
+
+```json
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "request validation failed",
+    "fields": {
+      "title": "must not be blank"
+    }
+  }
+}
+```
+
+Malformed JSON and invalid request syntax return `400 Bad Request`.
 
 ## Errors
 
@@ -453,13 +569,13 @@ Errors use a consistent JSON representation:
     "code": "validation_failed",
     "message": "request validation failed",
     "fields": {
-      "title": "title is required"
+      "title": "must not be blank"
     }
   }
 }
 ```
 
-Examples of error categories include:
+Error categories include:
 
 ```text
 invalid_request
@@ -469,14 +585,65 @@ conflict
 internal_error
 ```
 
+Typical status mappings are:
+
+| Status | Meaning |
+| --- | --- |
+| `400 Bad Request` | Malformed request syntax or invalid path/query input |
+| `404 Not Found` | Requested resource does not exist |
+| `409 Conflict` | Request conflicts with existing state, such as a duplicate title |
+| `422 Unprocessable Entity` | Request is structurally valid but fails field or domain validation |
+| `500 Internal Server Error` | Unexpected server-side failure |
+
 Internal database or implementation errors are not exposed directly to API consumers.
+
+## Logging
+
+The service uses structured JSON logging through Go's `log/slog` package.
+
+HTTP request logs include:
+
+* request ID;
+* method;
+* path;
+* response status;
+* response size;
+* request duration.
+
+Application errors include the request ID where available so request and error events can be correlated.
+
+Example:
+
+```json
+{
+  "level": "INFO",
+  "msg": "request completed",
+  "request_id": "example-request-id",
+  "method": "GET",
+  "path": "/v1/books",
+  "status": 200
+}
+```
+
+## Graceful Shutdown
+
+The HTTP server handles termination signals and performs graceful shutdown.
+
+When receiving `SIGINT` or `SIGTERM`, the service:
+
+1. stops accepting new connections;
+2. allows active requests a bounded amount of time to complete;
+3. shuts down the HTTP server;
+4. allows deferred resources such as the database connection pool to close normally.
+
+This behavior also applies when the Docker container is stopped.
 
 ## API Documentation
 
 Interactive Swagger documentation is exposed at:
 
 ```text
-/swagger/
+/swagger/index.html
 ```
 
 Generated OpenAPI files are stored in:
@@ -491,6 +658,8 @@ Regenerate them with:
 make gen-docs
 ```
 
+The generated specification reflects the behavior implemented by the service and does not advertise authentication that the API does not currently implement.
+
 ## Database Migrations
 
 Migrations are stored under:
@@ -503,11 +672,30 @@ Schema changes are applied incrementally rather than modifying an existing migra
 
 This repository currently includes migrations covering:
 
-* authors
-* books
-* history entries
-* soft deletion
-* publication date and many-to-many book authors
+* authors;
+* books;
+* history entries;
+* soft deletion;
+* publication date;
+* many-to-many book authors.
+
+Apply all pending migrations with:
+
+```bash
+make migrate-up
+```
+
+Roll back the latest migration with:
+
+```bash
+make migrate-down
+```
+
+Create a new migration pair with:
+
+```bash
+make migrate-create name=add_example_column
+```
 
 ## Testing
 
@@ -523,7 +711,17 @@ Or directly:
 go test ./...
 ```
 
-Tests cover API helpers, query parsing, history behavior, and persistence-related functionality.
+Tests cover API helpers, request and query validation, history behavior, and persistence-related functionality.
+
+A basic Docker smoke test can be performed with:
+
+```bash
+make docker-up
+
+curl -i http://localhost:8080/health
+
+make docker-down
+```
 
 ## Design Decisions
 
@@ -535,7 +733,15 @@ The API owns the book mutation path, so keeping this behavior in the application
 
 Consistency is still preserved by writing the book mutation and history entry in the same database transaction.
 
-If the database were shared by multiple independent writers and audit completeness has to guaranteed regardless of the write path, database-level auditing or another event architecture would be worth considering here.
+If the database were shared by multiple independent writers and audit completeness had to be guaranteed regardless of the write path, database-level auditing or another event architecture would be worth considering here.
+
+### Transactional history
+
+Book changes and history entries are committed atomically.
+
+This ensures that a successful application-level write cannot exist without its corresponding history record.
+
+Updates and deletions lock the affected book while the previous state is being read and the mutation is applied.
 
 ### JSONB instead of JSON
 
@@ -553,6 +759,8 @@ The project uses explicit SQL instead of introducing database views or stored pr
 
 The current queries are small enough that additional database abstractions would add indirection without providing meaningful reuse.
 
+Dynamic ordering values are restricted through explicit allowlists rather than interpolating unrestricted client values into SQL.
+
 ### Soft deletion
 
 Books are soft-deleted rather than physically removed.
@@ -567,23 +775,52 @@ For this service, this keeps the audit representation simple and makes it possib
 
 For a larger domain, a more compact change-set representation could be considered.
 
+### Partial update model
+
+PATCH requests are represented separately from the persisted book model.
+
+Optional pointer fields distinguish between a field that was omitted and a field that was explicitly supplied.
+
+The current book is loaded and locked inside the update transaction before the requested fields are applied. This avoids lost updates caused by writing an older full-book representation back to the database.
+
+### Application-layer validation
+
+Input validation is split between transport-level validation and domain/persistence validation.
+
+The HTTP layer validates request shape and individual field constraints.
+
+The storage layer enforces invariants that depend on persisted state, such as referenced authors existing and book titles remaining unique.
+
+This keeps client-facing validation useful without relying solely on request-level checks for database-backed constraints.
+
+### Docker image
+
+The API uses a multi-stage Docker build.
+
+The first stage compiles the Go application, while the runtime image contains only the compiled binary and the minimal runtime environment.
+
+The application runs as a non-root user inside the container.
+
+Database migrations are intentionally run as an explicit deployment step rather than automatically by every API process at startup.
+
 ## Production Considerations
 
 The project aims to demonstrate production-oriented application design while remaining appropriately scoped for a small service.
 
 Further concerns for a full production deployment depend on the surrounding platform and deployment environment and may include:
 
-* authentication and authorization
-* metrics and distributed tracing
-* readiness checks
-* TLS termination
-* secret management
-* rate limiting
-* deployment orchestration
-* database backups and recovery
-* CI/CD
-* dependency and container scanning
-* monitoring and alerting
+* authentication and authorization;
+* metrics and distributed tracing;
+* readiness checks;
+* TLS termination;
+* secret management;
+* rate limiting;
+* deployment orchestration;
+* database backups and recovery;
+* CI/CD;
+* dependency and container scanning;
+* centralized log collection;
+* monitoring and alerting.
 
 These concerns should be implemented according to the environment in which the service is deployed rather than introducing platform-specific infrastructure into the core domain unnecessarily.
 
